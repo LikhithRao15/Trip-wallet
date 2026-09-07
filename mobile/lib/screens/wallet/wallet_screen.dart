@@ -325,7 +325,32 @@ Future<void> _openPayExpense() async {
   }
 
   Widget _buildTransaction(WalletTransaction transaction) {
-  final isCredit = transaction.amountPaise > 0;
+  bool isCredit;
+
+switch (transaction.transactionType) {
+  case 'CONTRIBUTION':
+    isCredit = true;
+    break;
+
+  case 'CONTRIBUTION_ADJUSTMENT':
+    isCredit = transaction.amountPaise >= 0;
+    break;
+
+  case 'EXPENSE':
+    isCredit = false;
+    break;
+
+  case 'EXPENSE_ADJUSTMENT':
+    isCredit = transaction.amountPaise <= 0;
+    break;
+
+  case 'EXPENSE_REVERSAL':
+    isCredit = true;
+    break;
+
+  default:
+    isCredit = transaction.amountPaise >= 0;
+}
 
   String title;
 
@@ -393,7 +418,7 @@ Future<void> _openPayExpense() async {
       ),
       trailing: Text(
         '${isCredit ? '+' : '-'}'
-        '₹${_formatMoney(transaction.amountPaise.abs())}',
+        '${_formatMoney(transaction.amountPaise.abs())}',
         style: TextStyle(
           fontWeight: FontWeight.bold,
           color: isCredit ? Colors.green : Colors.red,

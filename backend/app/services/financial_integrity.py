@@ -80,7 +80,7 @@ def calculate_wallet_transaction_balance(
         + contribution_adjustments
         - expenses
         + expense_reversals
-        + expense_adjustments
+        - expense_adjustments
     )
 
 def verify_wallet_balance(

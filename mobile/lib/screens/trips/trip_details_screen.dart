@@ -9,6 +9,7 @@ import 'close_trip_screen.dart';
 import '../expenses/pay_expense_screen.dart';
 import '../expenses/expense_history_screen.dart';
 import '../settlement/settlement_screen.dart';
+import '../wallet/contribution_history_screen.dart';
 
 class TripDetailsScreen extends StatelessWidget {
   final Trip trip;
@@ -63,8 +64,13 @@ class TripDetailsScreen extends StatelessWidget {
               title: 'Contributions',
               subtitle: 'Record and view member contributions',
               onTap: () {
-                // Contributions screen
-              },
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ContributionHistoryScreen(trip: trip),
+                  ),
+  );
+},
             ),
 
           _buildSection(

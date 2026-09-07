@@ -294,6 +294,65 @@ def get_expenses(
 
     return result
 
+@router.get(
+    "/{expense_id}",
+    response_model=ExpenseResponse,
+)
+def get_expense(
+    trip_id: UUID,
+    expense_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # Check trip
+    trip = db.scalar(
+        select(Trip).where(Trip.id == trip_id)
+    )
+
+    if not trip:
+        raise HTTPException(
+            status_code=404,
+            detail="Trip not found",
+        )
+
+    # Check user is an active trip member
+    membership = db.scalar(
+        select(TripMember).where(
+            TripMember.trip_id == trip_id,
+            TripMember.user_id == current_user.id,
+            TripMember.status == "ACTIVE",
+        )
+    )
+
+    if not membership:
+        raise HTTPException(
+            status_code=403,
+            detail="You are not a member of this trip",
+        )
+
+    # Find expense
+    expense = db.scalar(
+        select(Expense).where(
+            Expense.id == expense_id,
+            Expense.trip_id == trip_id,
+        )
+    )
+
+    if not expense:
+        raise HTTPException(
+            status_code=404,
+            detail="Expense not found",
+        )
+
+    # Load splits
+    expense.splits = db.scalars(
+        select(ExpenseSplit).where(
+            ExpenseSplit.expense_id == expense.id
+        )
+    ).all()
+
+    return expense
+
 @router.post(
     "/{expense_id}/cancel",
     response_model=ExpenseResponse,

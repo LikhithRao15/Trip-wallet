@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from pydantic import BaseModel, Field, EmailStr
-
+from datetime import datetime
 
 class WalletResponse(BaseModel):
     id: UUID
@@ -49,6 +49,7 @@ class WalletTransactionResponse(BaseModel):
     reference_id: UUID | None
     description: str | None
     created_by: UUID
+    created_at: datetime
 
     model_config = {"from_attributes": True}
 

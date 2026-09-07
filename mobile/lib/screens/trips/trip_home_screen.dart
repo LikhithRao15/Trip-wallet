@@ -176,15 +176,17 @@ class _TripHomeScreenState extends State<TripHomeScreen> {
               trailing: Chip(
                 label: Text(trip.status),
               ),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => TripDetailsScreen(
-                      trip: trip,
-                    ),
-                  ),
-                );
+              onTap: () async {
+                final result = await Navigator.push(
+  context,
+  MaterialPageRoute(
+    builder: (_) => TripDetailsScreen(trip: trip),
+  ),
+);
+
+if (result == true && mounted) {
+  _loadTrips();
+}
               },
             ),
           );

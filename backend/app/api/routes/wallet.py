@@ -260,6 +260,54 @@ def add_contribution(
         )
 
 @router.get(
+    "/contributions",
+    response_model=list[ContributionResponse],
+)
+def get_contributions(
+    trip_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # Check trip
+    trip = db.scalar(
+        select(Trip).where(Trip.id == trip_id)
+    )
+
+    if not trip:
+        raise HTTPException(
+            status_code=404,
+            detail="Trip not found",
+        )
+
+    # Check active membership
+    membership = db.scalar(
+        select(TripMember).where(
+            TripMember.trip_id == trip_id,
+            TripMember.user_id == current_user.id,
+            TripMember.status == "ACTIVE",
+        )
+    )
+
+    if not membership:
+        raise HTTPException(
+            status_code=403,
+            detail="You are not a member of this trip",
+        )
+
+    # Get contributions
+    contributions = db.scalars(
+        select(Contribution)
+        .where(
+            Contribution.trip_id == trip_id,
+        )
+        .order_by(
+            Contribution.created_at.desc()
+        )
+    ).all()
+
+    return contributions
+
+@router.get(
     "/wallet/transactions",
     response_model=list[WalletTransactionResponse],
 )
@@ -386,7 +434,7 @@ def get_wallet_summary(
     total_expenses = db.scalar(
         select(
             func.coalesce(
-            func.sum(Contribution.amount_paise),
+            func.sum(Expense.amount_paise),
                 0,
             )
         ).where(

@@ -35,7 +35,7 @@ class Expense {
       category: json['category'],
       description: json['description'],
       status: json['status'] ?? 'CONFIRMED',
-      createdAt: json['created_at'],
+      createdAt: json['created_at']?.toString() ?? '',
       splits: splitsJson
           .map(
             (item) => ExpenseSplit.fromJson(

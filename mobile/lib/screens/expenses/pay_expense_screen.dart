@@ -351,7 +351,7 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
                 children: _members.map((member) {
                   final selected =
                       _selectedMemberIds.contains(
-                    member.id,
+                    member.userId,
                   );
 
                   return CheckboxListTile(
@@ -369,10 +369,10 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
                       setState(() {
                         if (value == true) {
                           _selectedMemberIds
-                              .add(member.id);
+                              .add(member.userId);
                         } else {
                           _selectedMemberIds
-                              .remove(member.id);
+                              .remove(member.userId);
                         }
                       });
                     },

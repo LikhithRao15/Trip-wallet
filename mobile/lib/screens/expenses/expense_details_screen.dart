@@ -4,6 +4,8 @@ import '../../models/expense.dart';
 import '../../models/trip.dart';
 import 'edit_expense_screen.dart';
 import '../../services/expense_service.dart';
+import '../../models/trip_member.dart';
+import '../../services/members_service.dart';
 
 class ExpenseDetailsScreen extends StatefulWidget {
   final Trip trip;
@@ -23,8 +25,10 @@ class ExpenseDetailsScreen extends StatefulWidget {
 class _ExpenseDetailsScreenState
     extends State<ExpenseDetailsScreen> {
   final ExpenseService _expenseService = ExpenseService();
+  final MemberService _memberService = MemberService();
 
   Expense? _expense;
+  List<TripMember> _members = [];
   bool _isLoading = true;
   String? _error;
 
@@ -35,32 +39,37 @@ class _ExpenseDetailsScreenState
   }
 
   Future<void> _loadExpense() async {
+  setState(() {
+    _isLoading = true;
+    _error = null;
+  });
+
+  try {
+    final expense = await _expenseService.getExpense(
+      tripId: widget.trip.id,
+      expenseId: widget.expenseId,
+    );
+
+    final members = await _memberService.getMembers(
+      widget.trip.id,
+    );
+
+    if (!mounted) return;
+
     setState(() {
-      _isLoading = true;
-      _error = null;
+      _expense = expense;
+      _members = members;
+      _isLoading = false;
     });
+  } catch (e) {
+    if (!mounted) return;
 
-    try {
-      final expense = await _expenseService.getExpense(
-        tripId: widget.trip.id,
-        expenseId: widget.expenseId,
-      );
-
-      if (!mounted) return;
-
-      setState(() {
-        _expense = expense;
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-
-      setState(() {
-        _error = e.toString();
-        _isLoading = false;
-      });
-    }
+    setState(() {
+      _error = e.toString();
+      _isLoading = false;
+    });
   }
+}
 
   Future<void> _cancelExpense() async {
   final confirmed = await showDialog<bool>(
@@ -134,6 +143,15 @@ class _ExpenseDetailsScreenState
   if (result == true) {
     await _loadExpense();
   }
+}
+
+  String _getPayerName(String userId) {
+  final member = _members.cast<TripMember?>().firstWhere(
+        (member) => member?.userId == userId,
+        orElse: () => null,
+      );
+
+  return member?.name ?? 'Unknown member';
 }
 
   String _formatMoney(int paise) {
@@ -234,7 +252,7 @@ class _ExpenseDetailsScreenState
               _infoTile(
                 Icons.person_outline,
                 'Paid by',
-                expense.paidBy,
+                _getPayerName(expense.paidBy),
               ),
               _infoTile(
                 Icons.calendar_today_outlined,

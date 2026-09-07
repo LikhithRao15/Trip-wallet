@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from pydantic import BaseModel, Field
-
+from datetime import datetime
 
 class ExpenseCreate(BaseModel):
     amount_paise: int = Field(gt=0)
@@ -26,6 +26,7 @@ class ExpenseResponse(BaseModel):
     category: str
     description: str | None
     status: str
+    created_at: datetime
     splits: list[ExpenseSplitResponse]
 
     model_config = {"from_attributes": True}

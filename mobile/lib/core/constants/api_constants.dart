@@ -1,6 +1,5 @@
 class ApiConstants {
-  static const String baseUrl = 'http://127.0.0.1:8000';
-
+static const String baseUrl = 'https://trip-wallet-api.onrender.com';
   static const String register = '$baseUrl/auth/register';
   static const String login = '$baseUrl/auth/login';
 

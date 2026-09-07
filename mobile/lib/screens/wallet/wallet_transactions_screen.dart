@@ -166,12 +166,37 @@ class _WalletTransactionsScreenState
       child: ListView.separated(
         padding: const EdgeInsets.all(16),
         itemCount: _transactions.length,
-        separatorBuilder: (_, __) =>
+        separatorBuilder: (_, _) =>
             const SizedBox(height: 8),
         itemBuilder: (context, index) {
           final transaction = _transactions[index];
 
-          final isCredit = transaction.amountPaise > 0;
+          bool isCredit;
+
+switch (transaction.transactionType) {
+  case 'CONTRIBUTION':
+    isCredit = true;
+    break;
+
+  case 'CONTRIBUTION_ADJUSTMENT':
+    isCredit = transaction.amountPaise >= 0;
+    break;
+
+  case 'EXPENSE':
+    isCredit = false;
+    break;
+
+  case 'EXPENSE_ADJUSTMENT':
+    isCredit = transaction.amountPaise <= 0;
+    break;
+
+  case 'EXPENSE_REVERSAL':
+    isCredit = true;
+    break;
+
+  default:
+    isCredit = transaction.amountPaise >= 0;
+}
 
           return Card(
             child: ListTile(

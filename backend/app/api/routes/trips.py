@@ -90,6 +90,42 @@ def get_my_trips(
 
     return trips
 
+
+@router.get(
+    "/{trip_id}",
+    response_model=TripResponse,
+)
+def get_trip(
+    trip_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    trip = db.scalar(select(Trip).where(Trip.id == trip_id))
+
+    if not trip:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Trip not found",
+        )
+
+    # Allow if the user is the admin or an active member of the trip
+    if trip.admin_id != current_user.id:
+        member = db.scalar(
+            select(TripMember).where(
+                TripMember.trip_id == trip_id,
+                TripMember.user_id == current_user.id,
+                TripMember.status == "ACTIVE",
+            )
+        )
+        if not member:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You are not a member of this trip",
+            )
+
+    return trip
+
+
 @router.post(
     "/{trip_id}/close",
     response_model=TripResponse,

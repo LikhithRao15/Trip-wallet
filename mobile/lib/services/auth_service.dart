@@ -46,6 +46,27 @@ class AuthService {
     return await _tokenStorage.getToken();
   }
 
+  Future<Map<String, dynamic>?> getMe() async {
+    final token = await _tokenStorage.getToken();
+    if (token == null) return null;
+
+    try {
+      final response = await _apiClient.get(
+        ApiConstants.me,
+        token: token,
+      );
+      return Map<String, dynamic>.from(response);
+    } catch (_) {
+      await _tokenStorage.clearToken();
+      return null;
+    }
+  }
+
+  Future<bool> hasValidSession() async {
+    final user = await getMe();
+    return user != null;
+  }
+
   Future<void> logout() async {
     await _tokenStorage.clearToken();
   }

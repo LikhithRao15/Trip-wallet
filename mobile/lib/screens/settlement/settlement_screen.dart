@@ -127,6 +127,28 @@ class _SettlementScreenState extends State<SettlementScreen> {
             ),
           ),
 
+          const SizedBox(height: 8),
+
+          Card(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            child: const Padding(
+              padding: EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, size: 20),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Positive (+) = member should receive money.\n'
+                      'Negative (−) = member owes money to the group.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
           const SizedBox(height: 12),
 
           if (settlement.members.isEmpty)
@@ -214,19 +236,23 @@ class _SettlementScreenState extends State<SettlementScreen> {
     IconData icon;
     String title;
     String amount;
+    Color amountColor;
 
     if (member.position == 'RECEIVE') {
       icon = Icons.arrow_downward;
       title = 'Should Receive';
-      amount = _formatMoney(member.netPaise);
+      amount = '+${_formatMoney(member.netPaise)}';
+      amountColor = Colors.green;
     } else if (member.position == 'PAY') {
       icon = Icons.arrow_upward;
       title = 'Should Pay';
-      amount = _formatMoney(member.netPaise.abs());
+      amount = '-${_formatMoney(member.netPaise.abs())}';
+      amountColor = Colors.red;
     } else {
       icon = Icons.check_circle_outline;
       title = 'Settled';
       amount = _formatMoney(0);
+      amountColor = Colors.grey.shade700;
     }
 
     return Card(
@@ -244,8 +270,10 @@ class _SettlementScreenState extends State<SettlementScreen> {
         subtitle: Text(title),
         trailing: Text(
           amount,
-          style: const TextStyle(
+          style: TextStyle(
             fontWeight: FontWeight.bold,
+            fontSize: 15,
+            color: amountColor,
           ),
         ),
       ),

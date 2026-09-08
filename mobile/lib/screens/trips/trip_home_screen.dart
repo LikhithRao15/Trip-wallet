@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../models/trip.dart';
 import 'trip_details_screen.dart';
 import '../../services/trip_service.dart';
+import '../../services/auth_service.dart';
+import '../auth/login_screen.dart';
 import 'create_trip_screen.dart';
 
 class TripHomeScreen extends StatefulWidget {
@@ -14,6 +16,7 @@ class TripHomeScreen extends StatefulWidget {
 
 class _TripHomeScreenState extends State<TripHomeScreen> {
   final TripService _tripService = TripService();
+  final AuthService _authService = AuthService();
 
   List<Trip> _trips = [];
   bool _isLoading = true;
@@ -23,6 +26,38 @@ class _TripHomeScreenState extends State<TripHomeScreen> {
   void initState() {
     super.initState();
     _loadTrips();
+  }
+
+  Future<void> _logout() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Log Out'),
+        content: const Text('Are you sure you want to log out?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Log Out'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    await _authService.logout();
+
+    if (!mounted) return;
+
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
   }
 
   Future<void> _loadTrips() async {
@@ -59,6 +94,12 @@ class _TripHomeScreenState extends State<TripHomeScreen> {
           IconButton(
             onPressed: _loadTrips,
             icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh',
+          ),
+          IconButton(
+            onPressed: _logout,
+            icon: const Icon(Icons.logout),
+            tooltip: 'Log Out',
           ),
         ],
       ),
@@ -67,9 +108,7 @@ class _TripHomeScreenState extends State<TripHomeScreen> {
         onPressed: () async {
           final created = await Navigator.push<bool>(
             context,
-            MaterialPageRoute(
-              builder: (context) => const CreateTripScreen(),
-            ),
+            MaterialPageRoute(builder: (context) => const CreateTripScreen()),
           );
 
           if (created == true) {
@@ -83,9 +122,7 @@ class _TripHomeScreenState extends State<TripHomeScreen> {
 
   Widget _buildBody() {
     if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     if (_error != null) {
@@ -95,20 +132,11 @@ class _TripHomeScreenState extends State<TripHomeScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(
-                Icons.error_outline,
-                size: 48,
-              ),
+              const Icon(Icons.error_outline, size: 48),
               const SizedBox(height: 16),
-              Text(
-                _error!,
-                textAlign: TextAlign.center,
-              ),
+              Text(_error!, textAlign: TextAlign.center),
               const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _loadTrips,
-                child: const Text('Retry'),
-              ),
+              ElevatedButton(onPressed: _loadTrips, child: const Text('Retry')),
             ],
           ),
         ),
@@ -120,17 +148,11 @@ class _TripHomeScreenState extends State<TripHomeScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.luggage_outlined,
-              size: 64,
-            ),
+            Icon(Icons.luggage_outlined, size: 64),
             SizedBox(height: 16),
             Text(
               'No trips yet',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             SizedBox(height: 8),
             Text('Create your first trip'),
@@ -153,40 +175,33 @@ class _TripHomeScreenState extends State<TripHomeScreen> {
               contentPadding: const EdgeInsets.all(16),
               leading: CircleAvatar(
                 child: Text(
-                  trip.name.isNotEmpty
-                      ? trip.name[0].toUpperCase()
-                      : '?',
+                  trip.name.isNotEmpty ? trip.name[0].toUpperCase() : '?',
                 ),
               ),
               title: Text(
                 trip.name,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                ),
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               subtitle: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (trip.destination != null)
-                    Text(trip.destination!),
+                  if (trip.destination != null) Text(trip.destination!),
                   const SizedBox(height: 4),
                   Text('Currency: ${trip.currency}'),
                 ],
               ),
-              trailing: Chip(
-                label: Text(trip.status),
-              ),
+              trailing: Chip(label: Text(trip.status)),
               onTap: () async {
-                final result = await Navigator.push(
-  context,
-  MaterialPageRoute(
-    builder: (_) => TripDetailsScreen(trip: trip),
-  ),
-);
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => TripDetailsScreen(trip: trip),
+                  ),
+                );
 
-if (result == true && mounted) {
-  _loadTrips();
-}
+                if (mounted) {
+                  _loadTrips();
+                }
               },
             ),
           );

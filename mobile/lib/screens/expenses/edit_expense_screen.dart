@@ -32,20 +32,21 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
   List<TripMember> _members = [];
   final Set<String> _selectedMembers = {};
 
-  String _category = 'Food';
+  String _category = 'FOOD';
 
   bool _loadingMembers = true;
   bool _saving = false;
   String? _error;
 
   final List<String> _categories = [
-    'Food',
-    'Travel',
-    'Hotel',
-    'Shopping',
-    'Tickets',
-    'Fuel',
-    'Other',
+    'FOOD',
+    'TRAVEL',
+    'HOTEL',
+    'SHOPPING',
+    'TICKETS',
+    'ENTERTAINMENT',
+    'MEDICAL',
+    'OTHER',
   ];
 
   @override
@@ -60,9 +61,8 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
       text: widget.expense.description ?? '',
     );
 
-    _category = _categories.contains(widget.expense.category)
-        ? widget.expense.category
-        : 'Other';
+    final upperCategory = widget.expense.category.toUpperCase();
+    _category = _categories.contains(upperCategory) ? upperCategory : 'OTHER';
 
     _loadMembers();
   }
@@ -91,15 +91,44 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
   }
 
   int _parseAmountToPaise() {
-    final amount = double.tryParse(
-      _amountController.text.trim(),
-    );
+    final text = _amountController.text.trim();
 
-    if (amount == null || amount <= 0) {
+    if (text.isEmpty) {
       throw Exception('Enter a valid amount');
     }
 
-    return (amount * 100).round();
+    final parts = text.split('.');
+
+    if (parts.length > 2) {
+      throw Exception('Enter a valid amount');
+    }
+
+    final rupees = int.tryParse(parts[0]);
+
+    if (rupees == null || rupees < 0) {
+      throw Exception('Enter a valid amount');
+    }
+
+    int paise = 0;
+
+    if (parts.length == 2) {
+      final decimal = parts[1];
+
+      if (decimal.length > 2) {
+        throw Exception('Maximum 2 decimal places allowed');
+      }
+
+      final padded = decimal.padRight(2, '0');
+      paise = int.tryParse(padded) ?? 0;
+    }
+
+    final total = rupees * 100 + paise;
+
+    if (total <= 0) {
+      throw Exception('Amount must be greater than zero');
+    }
+
+    return total;
   }
 
   Future<void> _save() async {
@@ -109,9 +138,7 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
 
     if (_selectedMembers.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Select at least one participant'),
-        ),
+        const SnackBar(content: Text('Select at least one participant')),
       );
       return;
     }
@@ -121,9 +148,8 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
     try {
       amountPaise = _parseAmountToPaise();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.toString())));
       return;
     }
 
@@ -146,9 +172,7 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Expense updated successfully'),
-        ),
+        const SnackBar(content: Text('Expense updated successfully')),
       );
 
       Navigator.pop(context, true);
@@ -156,11 +180,7 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            e.toString().replaceFirst('Exception: ', ''),
-          ),
-        ),
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
       );
     } finally {
       if (mounted) {
@@ -181,130 +201,118 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Edit Expense'),
-      ),
+      appBar: AppBar(title: const Text('Edit Expense')),
       body: _loadingMembers
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? Center(child: Text(_error!))
-              : Form(
-                  key: _formKey,
-                  child: ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      TextFormField(
-                        controller: _amountController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: InputDecoration(
-                          labelText: 'Amount',
-                          prefixText: '${widget.trip.currency} ',
-                        ),
-                        validator: (value) {
-                          final amount = double.tryParse(
-                            value?.trim() ?? '',
-                          );
+          ? Center(child: Text(_error!))
+          : Form(
+              key: _formKey,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  TextFormField(
+                    controller: _amountController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'Amount',
+                      prefixText: '${widget.trip.currency} ',
+                    ),
+                    validator: (value) {
+                      final amount = double.tryParse(value?.trim() ?? '');
 
-                          if (amount == null || amount <= 0) {
-                            return 'Enter a valid amount';
-                          }
+                      if (amount == null || amount <= 0) {
+                        return 'Enter a valid amount';
+                      }
 
-                          return null;
-                        },
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      DropdownButtonFormField<String>(
-                        initialValue: _category,
-                        decoration: const InputDecoration(
-                          labelText: 'Category',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: _categories
-                            .map(
-                              (category) => DropdownMenuItem(
-                                value: category,
-                                child: Text(category),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: (value) {
-                          if (value != null) {
-                            setState(() {
-                              _category = value;
-                            });
-                          }
-                        },
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      TextFormField(
-                        controller: _descriptionController,
-                        maxLines: 3,
-                        decoration: const InputDecoration(
-                          labelText: 'Description',
-                          border: OutlineInputBorder(),
-                        ),
-                      ),
-
-                      const SizedBox(height: 24),
-
-                      const Text(
-                        'Split Between',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-
-                      const SizedBox(height: 8),
-
-                      ..._members.map(
-                        (member) {
-                          final selected =
-                              _selectedMembers.contains(member.userId);
-
-                          return CheckboxListTile(
-                            value: selected,
-                            title: Text(member.name),
-                            subtitle: Text(member.email),
-                            onChanged: (value) {
-                              setState(() {
-                                if (value == true) {
-                                  _selectedMembers.add(member.userId);
-                                } else {
-                                  _selectedMembers.remove(member.userId);
-                                }
-                              });
-                            },
-                          );
-                        },
-                      ),
-
-                      const SizedBox(height: 24),
-
-                      SizedBox(
-                        height: 50,
-                        child: FilledButton(
-                          onPressed: _saving ? null : _save,
-                          child: _saving
-                              ? const SizedBox(
-                                  width: 22,
-                                  height: 22,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Text('Save Changes'),
-                        ),
-                      ),
-                    ],
+                      return null;
+                    },
                   ),
-                ),
+
+                  const SizedBox(height: 16),
+
+                  DropdownButtonFormField<String>(
+                    initialValue: _category,
+                    decoration: const InputDecoration(
+                      labelText: 'Category',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: _categories
+                        .map(
+                          (category) => DropdownMenuItem(
+                            value: category,
+                            child: Text(category.replaceAll('_', ' ')),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() {
+                          _category = value;
+                        });
+                      }
+                    },
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  TextFormField(
+                    controller: _descriptionController,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: 'Description',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+
+                  const SizedBox(height: 24),
+
+                  const Text(
+                    'Split Between',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+
+                  const SizedBox(height: 8),
+
+                  ..._members.map((member) {
+                    final selected = _selectedMembers.contains(member.userId);
+
+                    return CheckboxListTile(
+                      value: selected,
+                      title: Text(member.name),
+                      subtitle: Text(member.email),
+                      onChanged: (value) {
+                        setState(() {
+                          if (value == true) {
+                            _selectedMembers.add(member.userId);
+                          } else {
+                            _selectedMembers.remove(member.userId);
+                          }
+                        });
+                      },
+                    );
+                  }),
+
+                  const SizedBox(height: 24),
+
+                  SizedBox(
+                    height: 50,
+                    child: FilledButton(
+                      onPressed: _saving ? null : _save,
+                      child: _saving
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Save Changes'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
     );
   }
 }

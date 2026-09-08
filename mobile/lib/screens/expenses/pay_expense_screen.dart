@@ -8,14 +8,10 @@ import '../../services/members_service.dart';
 class PayExpenseScreen extends StatefulWidget {
   final Trip trip;
 
-  const PayExpenseScreen({
-    super.key,
-    required this.trip,
-  });
+  const PayExpenseScreen({super.key, required this.trip});
 
   @override
-  State<PayExpenseScreen> createState() =>
-      _PayExpenseScreenState();
+  State<PayExpenseScreen> createState() => _PayExpenseScreenState();
 }
 
 class _PayExpenseScreenState extends State<PayExpenseScreen> {
@@ -67,8 +63,7 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
     });
 
     try {
-      final members =
-          await _memberService.getMembers(widget.trip.id);
+      final members = await _memberService.getMembers(widget.trip.id);
 
       if (!mounted) return;
 
@@ -123,7 +118,6 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
     return amountPaise;
   }
 
-
   int _selectedTotal() {
     return _selectedMemberIds.length;
   }
@@ -135,23 +129,16 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
 
     if (_selectedMemberIds.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Select at least one participant',
-          ),
-        ),
+        const SnackBar(content: Text('Select at least one participant')),
       );
       return;
     }
 
-    final amountPaise =
-        _parseAmountToPaise(_amountController.text);
+    final amountPaise = _parseAmountToPaise(_amountController.text);
 
     if (amountPaise == null) {
       return;
     }
-
-   
 
     setState(() {
       _submitting = true;
@@ -162,19 +149,16 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
         tripId: widget.trip.id,
         amountPaise: amountPaise,
         category: _category,
-        description:
-            _descriptionController.text.trim().isEmpty
-                ? null
-                : _descriptionController.text.trim(),
+        description: _descriptionController.text.trim().isEmpty
+            ? null
+            : _descriptionController.text.trim(),
         memberIds: _selectedMemberIds.toList(),
       );
 
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Expense paid successfully'),
-        ),
+        const SnackBar(content: Text('Expense paid successfully')),
       );
 
       Navigator.pop(context, true);
@@ -186,11 +170,7 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            e.toString().replaceFirst('Exception: ', ''),
-          ),
-        ),
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
       );
     }
   }
@@ -198,24 +178,19 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Pay Expense'),
-      ),
+      appBar: AppBar(title: const Text('Pay Expense')),
       body: _loadingMembers
-          ? const Center(
-              child: CircularProgressIndicator(),
-            )
+          ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? _buildError()
-              : _members.isEmpty
-                  ? _buildEmpty()
-                  : _buildForm(),
+          ? _buildError()
+          : _members.isEmpty
+          ? _buildEmpty()
+          : _buildForm(),
     );
   }
 
   Widget _buildForm() {
-    final amountPaise =
-        _parseAmountToPaise(_amountController.text);
+    final amountPaise = _parseAmountToPaise(_amountController.text);
 
     final selectedCount = _selectedTotal();
 
@@ -234,24 +209,21 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
           children: [
             Text(
               'Pay from Trip Wallet',
-              style:
-                  Theme.of(context).textTheme.headlineSmall,
+              style: Theme.of(context).textTheme.headlineSmall,
             ),
 
             const SizedBox(height: 8),
 
             Text(
               'Select everyone who should share this expense.',
-              style:
-                  Theme.of(context).textTheme.bodyMedium,
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
 
             const SizedBox(height: 24),
 
             TextFormField(
               controller: _amountController,
-              keyboardType:
-                  const TextInputType.numberWithOptions(
+              keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
               onChanged: (_) {
@@ -259,15 +231,12 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
               },
               decoration: InputDecoration(
                 labelText: 'Expense Amount',
-                prefixText:
-                    '${widget.trip.currency} ',
-                prefixIcon:
-                    const Icon(Icons.currency_rupee),
+                prefixText: '${widget.trip.currency} ',
+                prefixIcon: const Icon(Icons.currency_rupee),
                 border: const OutlineInputBorder(),
               ),
               validator: (value) {
-                if (value == null ||
-                    value.trim().isEmpty) {
+                if (value == null || value.trim().isEmpty) {
                   return 'Enter an amount';
                 }
 
@@ -285,16 +254,13 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
               initialValue: _category,
               decoration: const InputDecoration(
                 labelText: 'Category',
-                prefixIcon:
-                    Icon(Icons.category_outlined),
+                prefixIcon: Icon(Icons.category_outlined),
                 border: OutlineInputBorder(),
               ),
               items: _categories.map((category) {
                 return DropdownMenuItem(
                   value: category,
-                  child: Text(
-                    category.replaceAll('_', ' '),
-                  ),
+                  child: Text(category.replaceAll('_', ' ')),
                 );
               }).toList(),
               onChanged: (value) {
@@ -314,8 +280,7 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
               decoration: const InputDecoration(
                 labelText: 'Description',
                 hintText: 'Example: Lunch at restaurant',
-                prefixIcon:
-                    Icon(Icons.description_outlined),
+                prefixIcon: Icon(Icons.description_outlined),
                 border: OutlineInputBorder(),
               ),
             ),
@@ -323,21 +288,16 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
             const SizedBox(height: 28),
 
             Row(
-              mainAxisAlignment:
-                  MainAxisAlignment.spaceBetween,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text(
                   'Participants',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                 ),
                 Text(
                   '$selectedCount selected',
                   style: TextStyle(
-                    color:
-                        Theme.of(context).colorScheme.primary,
+                    color: Theme.of(context).colorScheme.primary,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -349,10 +309,7 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
             Card(
               child: Column(
                 children: _members.map((member) {
-                  final selected =
-                      _selectedMemberIds.contains(
-                    member.userId,
-                  );
+                  final selected = _selectedMemberIds.contains(member.userId);
 
                   return CheckboxListTile(
                     value: selected,
@@ -368,11 +325,9 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
                     onChanged: (value) {
                       setState(() {
                         if (value == true) {
-                          _selectedMemberIds
-                              .add(member.userId);
+                          _selectedMemberIds.add(member.userId);
                         } else {
-                          _selectedMemberIds
-                              .remove(member.userId);
+                          _selectedMemberIds.remove(member.userId);
                         }
                       });
                     },
@@ -381,16 +336,14 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
               ),
             ),
 
-            if (amountPaise != null &&
-                selectedCount > 0) ...[
+            if (amountPaise != null && selectedCount > 0) ...[
               const SizedBox(height: 20),
 
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
                         'Split Summary',
@@ -405,9 +358,7 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
                         '${(amountPaise / 100).toStringAsFixed(2)}',
                       ),
                       const SizedBox(height: 6),
-                      Text(
-                        'Participants: $selectedCount',
-                      ),
+                      Text('Participants: $selectedCount'),
                       const SizedBox(height: 6),
                       Text(
                         'Approx. each: ${widget.trip.currency} '
@@ -425,25 +376,15 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
               width: double.infinity,
               height: 52,
               child: FilledButton.icon(
-                onPressed:
-                    _submitting ? null : _submit,
+                onPressed: _submitting ? null : _submit,
                 icon: _submitting
                     ? const SizedBox(
                         width: 20,
                         height: 20,
-                        child:
-                            CircularProgressIndicator(
-                          strokeWidth: 2,
-                        ),
+                        child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(
-                        Icons.account_balance_wallet,
-                      ),
-                label: Text(
-                  _submitting
-                      ? 'Processing...'
-                      : 'Pay Expense',
-                ),
+                    : const Icon(Icons.account_balance_wallet),
+                label: Text(_submitting ? 'Processing...' : 'Pay Expense'),
               ),
             ),
           ],
@@ -459,15 +400,9 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
-              Icons.error_outline,
-              size: 48,
-            ),
+            const Icon(Icons.error_outline, size: 48),
             const SizedBox(height: 16),
-            Text(
-              _error!,
-              textAlign: TextAlign.center,
-            ),
+            Text(_error!, textAlign: TextAlign.center),
             const SizedBox(height: 16),
             OutlinedButton.icon(
               onPressed: _loadMembers,

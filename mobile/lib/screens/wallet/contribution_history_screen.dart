@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../models/contribution.dart';
 import '../../models/trip.dart';
+import '../../models/trip_member.dart';
 import '../../services/contribution_service.dart';
+import '../../services/members_service.dart';
 
 class ContributionHistoryScreen extends StatefulWidget {
   final Trip trip;
@@ -20,8 +22,10 @@ class ContributionHistoryScreen extends StatefulWidget {
 class _ContributionHistoryScreenState
     extends State<ContributionHistoryScreen> {
   final ContributionService _service = ContributionService();
+  final MemberService _memberService = MemberService();
 
   List<Contribution> _contributions = [];
+  Map<String, String> _memberNames = {};
   bool _isLoading = true;
   String? _error;
 
@@ -40,18 +44,28 @@ class _ContributionHistoryScreenState
     try {
       final result =
           await _service.getContributions(widget.trip.id);
+      List<TripMember> members = [];
+      try {
+        members = await _memberService.getMembers(widget.trip.id);
+      } catch (_) {}
+
+      final names = <String, String>{};
+      for (final m in members) {
+        names[m.userId] = m.name;
+      }
 
       if (!mounted) return;
 
       setState(() {
         _contributions = result;
+        _memberNames = names;
         _isLoading = false;
       });
     } catch (e) {
       if (!mounted) return;
 
       setState(() {
-        _error = e.toString();
+        _error = e.toString().replaceFirst('Exception: ', '');
         _isLoading = false;
       });
     }
@@ -60,6 +74,15 @@ class _ContributionHistoryScreenState
   String _formatMoney(int paise) {
     return '${widget.trip.currency} '
         '${(paise / 100).toStringAsFixed(2)}';
+  }
+
+  String _formatDate(String isoString) {
+    try {
+      final dt = DateTime.parse(isoString).toLocal();
+      return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+    } catch (_) {
+      return isoString;
+    }
   }
 
   @override
@@ -151,14 +174,19 @@ class _ContributionHistoryScreenState
   Widget _buildContributionCard(
     Contribution contribution,
   ) {
+    final memberName = _memberNames[contribution.memberId] ?? 'Member';
+    final dateStr = _formatDate(contribution.createdAt);
+
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       child: ListTile(
-        leading: const CircleAvatar(
-          child: Icon(Icons.arrow_downward),
+        leading: CircleAvatar(
+          child: Text(
+            memberName.isNotEmpty ? memberName[0].toUpperCase() : '?',
+          ),
         ),
         title: Text(
-          _formatMoney(contribution.amountPaise),
+          memberName,
           style: const TextStyle(
             fontWeight: FontWeight.bold,
           ),
@@ -166,9 +194,18 @@ class _ContributionHistoryScreenState
         subtitle: Text(
           '${contribution.paymentMethod} • '
           '${contribution.status}'
+          '${dateStr.isNotEmpty ? ' • $dateStr' : ''}'
           '${contribution.note?.isNotEmpty == true ? '\n${contribution.note}' : ''}',
         ),
-        isThreeLine: contribution.note?.isNotEmpty == true,
+        trailing: Text(
+          _formatMoney(contribution.amountPaise),
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+            color: Colors.green,
+          ),
+        ),
+        isThreeLine: contribution.note?.isNotEmpty == true || dateStr.isNotEmpty,
       ),
     );
   }

@@ -123,9 +123,28 @@ class _MemberFinancialScreenState
       onRefresh: _loadSummary,
       child: ListView(
         padding: const EdgeInsets.all(16),
-        children: _members
-            .map(_buildMemberCard)
-            .toList(),
+        children: [
+          Card(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            child: const Padding(
+              padding: EdgeInsets.all(12),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, size: 20),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Expense Share is the member\'s allocated share of common-wallet expenses. Net = Contributed − Expense Share.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          ..._members.map(_buildMemberCard),
+        ],
       ),
     );
   }
@@ -139,13 +158,31 @@ class _MemberFinancialScreenState
     final bool pay = net < 0;
 
     final String status;
+    final Color statusColor;
 
     if (receive) {
       status = 'Should Receive';
+      statusColor = Colors.green;
     } else if (pay) {
       status = 'Should Pay';
+      statusColor = Colors.red;
     } else {
       status = 'Settled';
+      statusColor = Colors.grey.shade700;
+    }
+
+    final String netDisplay;
+    final Color netColor;
+
+    if (net > 0) {
+      netDisplay = '+${_money(net)}';
+      netColor = Colors.green;
+    } else if (net < 0) {
+      netDisplay = '-${_money(net.abs())}';
+      netColor = Colors.red;
+    } else {
+      netDisplay = _money(0);
+      netColor = Colors.grey.shade700;
     }
 
     return Card(
@@ -166,8 +203,7 @@ class _MemberFinancialScreenState
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         member.name,
@@ -188,8 +224,9 @@ class _MemberFinancialScreenState
                 ),
                 Text(
                   status,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontWeight: FontWeight.bold,
+                    color: statusColor,
                   ),
                 ),
               ],
@@ -198,20 +235,20 @@ class _MemberFinancialScreenState
             const Divider(height: 24),
 
             Row(
-              mainAxisAlignment:
-                  MainAxisAlignment.spaceBetween,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 _value(
                   'Contributed',
                   _money(member.contributedPaise),
                 ),
                 _value(
-                  'Spent',
+                  'Expense Share',
                   _money(member.spentPaise),
                 ),
                 _value(
                   'Net',
-                  _money(net.abs()),
+                  netDisplay,
+                  valueColor: netColor,
                 ),
               ],
             ),
@@ -221,7 +258,7 @@ class _MemberFinancialScreenState
     );
   }
 
-  Widget _value(String title, String value) {
+  Widget _value(String title, String value, {Color? valueColor}) {
     return Column(
       children: [
         Text(
@@ -234,8 +271,9 @@ class _MemberFinancialScreenState
         const SizedBox(height: 4),
         Text(
           value,
-          style: const TextStyle(
+          style: TextStyle(
             fontWeight: FontWeight.bold,
+            color: valueColor,
           ),
         ),
       ],

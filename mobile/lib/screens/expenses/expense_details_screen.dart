@@ -159,6 +159,15 @@ class _ExpenseDetailsScreenState
         '${(paise / 100).toStringAsFixed(2)}';
   }
 
+  String _formatDate(String isoString) {
+    try {
+      final dt = DateTime.parse(isoString).toLocal();
+      return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+    } catch (_) {
+      return isoString;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -257,9 +266,64 @@ class _ExpenseDetailsScreenState
               _infoTile(
                 Icons.calendar_today_outlined,
                 'Created',
-                expense.createdAt,
+                _formatDate(expense.createdAt),
               ),
             ],
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Split Breakdown',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      '${expense.splits.length} participants',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                const Divider(),
+                ...expense.splits.map((split) {
+                  final name = _getPayerName(split.memberId);
+                  return ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(
+                      radius: 16,
+                      child: Text(
+                        name.isNotEmpty ? name[0].toUpperCase() : '?',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                    title: Text(name),
+                    trailing: Text(
+                      _formatMoney(split.amountPaise),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
           ),
         ),
 
@@ -281,31 +345,32 @@ class _ExpenseDetailsScreenState
             ),
           ),
         ),
-       if (expense.status == 'CONFIRMED') ...[
-  const SizedBox(height: 16),
 
-  Row(
-    children: [
-      Expanded(
-        child: OutlinedButton.icon(
-          onPressed: _editExpense,
-          icon: const Icon(Icons.edit_outlined),
-          label: const Text('Edit'),
-        ),
-      ),
+        if (expense.status == 'CONFIRMED' && widget.trip.status != 'CLOSED') ...[
+          const SizedBox(height: 16),
 
-      const SizedBox(width: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _editExpense,
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('Edit'),
+                ),
+              ),
 
-      Expanded(
-        child: OutlinedButton.icon(
-          onPressed: _cancelExpense,
-          icon: const Icon(Icons.cancel_outlined),
-          label: const Text('Cancel'),
-        ),
-      ),
-    ],
-  ),
-],
+              const SizedBox(width: 12),
+
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _cancelExpense,
+                  icon: const Icon(Icons.cancel_outlined),
+                  label: const Text('Cancel'),
+                ),
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }

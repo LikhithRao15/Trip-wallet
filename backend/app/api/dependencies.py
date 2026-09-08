@@ -1,3 +1,4 @@
+import uuid
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
@@ -27,15 +28,17 @@ def get_current_user(
             algorithms=[ALGORITHM],
         )
 
-        user_id = payload.get("sub")
+        raw_user_id = payload.get("sub")
 
-        if not user_id:
+        if not raw_user_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication token",
             )
 
-    except JWTError:
+        user_id = uuid.UUID(raw_user_id)
+
+    except (JWTError, ValueError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication token",

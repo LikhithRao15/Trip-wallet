@@ -103,29 +103,23 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
     });
 
     try {
-      await _apiClient.post(
-        ApiConstants.trips,
-        {
-          'name': _nameController.text.trim(),
-          'description': _descriptionController.text.trim().isEmpty
-              ? null
-              : _descriptionController.text.trim(),
-          'destination': _destinationController.text.trim().isEmpty
-              ? null
-              : _destinationController.text.trim(),
-          'start_date': _startDate?.toIso8601String().split('T').first,
-          'end_date': _endDate?.toIso8601String().split('T').first,
-          'currency': _currency,
-        },
-        token: token,
-      );
+      await _apiClient.post(ApiConstants.trips, {
+        'name': _nameController.text.trim(),
+        'description': _descriptionController.text.trim().isEmpty
+            ? null
+            : _descriptionController.text.trim(),
+        'destination': _destinationController.text.trim().isEmpty
+            ? null
+            : _destinationController.text.trim(),
+        'start_date': _startDate?.toIso8601String().split('T').first,
+        'end_date': _endDate?.toIso8601String().split('T').first,
+        'currency': _currency,
+      }, token: token);
 
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Trip created successfully'),
-        ),
+        const SnackBar(content: Text('Trip created successfully')),
       );
 
       Navigator.pop(context, true);
@@ -143,19 +137,14 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-      ),
-    );
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Create Trip'),
-      ),
+      appBar: AppBar(title: const Text('Create Trip')),
       body: Form(
         key: _formKey,
         child: ListView(
@@ -208,10 +197,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
 
             const Text(
               'Trip Dates',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
 
             const SizedBox(height: 10),
@@ -222,9 +208,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                   child: OutlinedButton.icon(
                     onPressed: _selectStartDate,
                     icon: const Icon(Icons.calendar_today),
-                    label: Text(
-                      'Start\n${_formatDate(_startDate)}',
-                    ),
+                    label: Text('Start\n${_formatDate(_startDate)}'),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -232,9 +216,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                   child: OutlinedButton.icon(
                     onPressed: _selectEndDate,
                     icon: const Icon(Icons.event),
-                    label: Text(
-                      'End\n${_formatDate(_endDate)}',
-                    ),
+                    label: Text('End\n${_formatDate(_endDate)}'),
                   ),
                 ),
               ],
@@ -253,14 +235,8 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                   value: 'INR',
                   child: Text('INR - Indian Rupee'),
                 ),
-                DropdownMenuItem(
-                  value: 'USD',
-                  child: Text('USD - US Dollar'),
-                ),
-                DropdownMenuItem(
-                  value: 'EUR',
-                  child: Text('EUR - Euro'),
-                ),
+                DropdownMenuItem(value: 'USD', child: Text('USD - US Dollar')),
+                DropdownMenuItem(value: 'EUR', child: Text('EUR - Euro')),
                 DropdownMenuItem(
                   value: 'GBP',
                   child: Text('GBP - British Pound'),
@@ -285,14 +261,10 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                     ? const SizedBox(
                         width: 20,
                         height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                        ),
+                        child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.add),
-                label: Text(
-                  _isLoading ? 'Creating...' : 'Create Trip',
-                ),
+                label: Text(_isLoading ? 'Creating...' : 'Create Trip'),
               ),
             ),
           ],

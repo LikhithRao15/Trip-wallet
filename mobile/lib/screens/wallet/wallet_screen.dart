@@ -105,54 +105,56 @@ Future<void> _openPayExpense() async {
       appBar: AppBar(
         title: const Text('Trip Wallet'),
         actions: [
-  IconButton(
-    onPressed: _isLoading ? null : _openAddContribution,
-    icon: const Icon(Icons.add),
-    tooltip: 'Add Contribution',
-  ),
-  IconButton(
-    onPressed: _isLoading
-        ? null
-        : () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => ContributionHistoryScreen(
-                  trip: widget.trip,
-                ),
-              ),
-            );
-          },
-    icon: const Icon(Icons.history),
-    tooltip: 'Contribution History',
-  ),
-  IconButton(
-    onPressed: _isLoading ? null : _openPayExpense,
-    icon: const Icon(Icons.payment),
-    tooltip: 'Pay Expense',
-  ),
-  IconButton(
-    onPressed: _loadWallet,
-    icon: const Icon(Icons.refresh),
-    tooltip: 'Refresh',
-  ),
-  IconButton(
-  onPressed: _isLoading
-      ? null
-      : () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => WalletTransactionsScreen(
-                trip: widget.trip,
-              ),
+          if (widget.trip.status != 'CLOSED')
+            IconButton(
+              onPressed: _isLoading ? null : _openAddContribution,
+              icon: const Icon(Icons.add),
+              tooltip: 'Add Contribution',
             ),
-          );
-        },
-  icon: const Icon(Icons.receipt_long_outlined),
-  tooltip: 'All Transactions',
-),
-],
+          IconButton(
+            onPressed: _isLoading
+                ? null
+                : () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ContributionHistoryScreen(
+                          trip: widget.trip,
+                        ),
+                      ),
+                    );
+                  },
+            icon: const Icon(Icons.history),
+            tooltip: 'Contribution History',
+          ),
+          if (widget.trip.status != 'CLOSED')
+            IconButton(
+              onPressed: _isLoading ? null : _openPayExpense,
+              icon: const Icon(Icons.payment),
+              tooltip: 'Pay Expense',
+            ),
+          IconButton(
+            onPressed: _loadWallet,
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh',
+          ),
+          IconButton(
+            onPressed: _isLoading
+                ? null
+                : () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => WalletTransactionsScreen(
+                          trip: widget.trip,
+                        ),
+                      ),
+                    );
+                  },
+            icon: const Icon(Icons.receipt_long_outlined),
+            tooltip: 'All Transactions',
+          ),
+        ],
       ),
       body: _buildBody(),
     );

@@ -101,10 +101,50 @@ class _MembersScreenState extends State<MembersScreen> {
     }
   }
 
+  Future<void> _removeMember(TripMember member) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove Member?'),
+        content: Text(
+          'Are you sure you want to remove ${member.name} from this trip?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await _memberService.removeMember(
+        tripId: widget.trip.id,
+        memberId: member.id,
+      );
+
+      if (!mounted) return;
+
+      _showMessage('${member.name} removed successfully');
+      await _loadMembers();
+    } catch (e) {
+      if (!mounted) return;
+      _showMessage(e.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
   void _showMessage(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message),
+        content: Text(message.replaceFirst('Exception: ', '')),
       ),
     );
   }
@@ -204,6 +244,8 @@ class _MembersScreenState extends State<MembersScreen> {
   }
 
   Widget _buildMembersList() {
+    final isClosed = widget.trip.status == 'CLOSED';
+
     if (_isLoading) {
       return const Center(
         child: CircularProgressIndicator(),
@@ -266,11 +308,24 @@ class _MembersScreenState extends State<MembersScreen> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              subtitle: Text(member.email),
-              trailing: Chip(
-                label: Text(
-                  isAdmin ? 'ADMIN' : 'MEMBER',
-                ),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Chip(
+                    label: Text(
+                      isAdmin ? 'ADMIN' : 'MEMBER',
+                    ),
+                  ),
+                  if (!isClosed && !isAdmin)
+                    IconButton(
+                      icon: const Icon(
+                        Icons.remove_circle_outline,
+                        color: Colors.red,
+                      ),
+                      tooltip: 'Remove Member',
+                      onPressed: () => _removeMember(member),
+                    ),
+                ],
               ),
             ),
           );

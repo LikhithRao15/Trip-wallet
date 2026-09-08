@@ -27,4 +27,19 @@ class TripService {
             ))
         .toList();
   }
+
+  Future<Trip> getTrip(String tripId) async {
+    final token = await _tokenStorage.getToken();
+
+    if (token == null) {
+      throw Exception('Please login again');
+    }
+
+    final response = await _apiClient.get(
+      '${ApiConstants.trips}/$tripId',
+      token: token,
+    );
+
+    return Trip.fromJson(Map<String, dynamic>.from(response));
+  }
 }

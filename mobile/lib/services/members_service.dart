@@ -50,4 +50,20 @@ class MemberService {
 
     return TripMember.fromJson(response);
   }
+
+  Future<void> removeMember({
+    required String tripId,
+    required String memberId,
+  }) async {
+    final token = await _tokenStorage.getToken();
+
+    if (token == null) {
+      throw Exception('Please login again');
+    }
+
+    await _apiClient.delete(
+      '${ApiConstants.trips}/$tripId/members/$memberId',
+      token: token,
+    );
+  }
 }

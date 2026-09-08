@@ -8,26 +8,20 @@ import '../../services/members_service.dart';
 class AddContributionScreen extends StatefulWidget {
   final Trip trip;
 
-  const AddContributionScreen({
-    super.key,
-    required this.trip,
-  });
+  const AddContributionScreen({super.key, required this.trip});
 
   @override
-  State<AddContributionScreen> createState() =>
-      _AddContributionScreenState();
+  State<AddContributionScreen> createState() => _AddContributionScreenState();
 }
 
-class _AddContributionScreenState
-    extends State<AddContributionScreen> {
+class _AddContributionScreenState extends State<AddContributionScreen> {
   final _formKey = GlobalKey<FormState>();
 
   final _amountController = TextEditingController();
   final _noteController = TextEditingController();
 
   final MemberService _memberService = MemberService();
-  final ContributionService _contributionService =
-      ContributionService();
+  final ContributionService _contributionService = ContributionService();
 
   List<TripMember> _members = [];
   TripMember? _selectedMember;
@@ -57,8 +51,7 @@ class _AddContributionScreenState
     });
 
     try {
-      final members =
-          await _memberService.getMembers(widget.trip.id);
+      final members = await _memberService.getMembers(widget.trip.id);
 
       if (!mounted) return;
 
@@ -86,17 +79,13 @@ class _AddContributionScreenState
     }
 
     if (_selectedMember == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select a member'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please select a member')));
       return;
     }
 
-    final amount = double.tryParse(
-      _amountController.text.trim(),
-    );
+    final amount = double.tryParse(_amountController.text.trim());
 
     if (amount == null || amount <= 0) {
       return;
@@ -117,9 +106,7 @@ class _AddContributionScreenState
       if (decimal.length > 2) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text(
-              'Amount can have maximum 2 decimal places',
-            ),
+            content: Text('Amount can have maximum 2 decimal places'),
           ),
         );
         return;
@@ -148,9 +135,7 @@ class _AddContributionScreenState
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Contribution added successfully'),
-        ),
+        const SnackBar(content: Text('Contribution added successfully')),
       );
 
       Navigator.pop(context, true);
@@ -162,11 +147,7 @@ class _AddContributionScreenState
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            e.toString().replaceFirst('Exception: ', ''),
-          ),
-        ),
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
       );
     }
   }
@@ -174,18 +155,14 @@ class _AddContributionScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Add Contribution'),
-      ),
+      appBar: AppBar(title: const Text('Add Contribution')),
       body: _loadingMembers
-          ? const Center(
-              child: CircularProgressIndicator(),
-            )
+          ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? _buildError()
-              : _members.isEmpty
-                  ? _buildEmpty()
-                  : _buildForm(),
+          ? _buildError()
+          : _members.isEmpty
+          ? _buildEmpty()
+          : _buildForm(),
     );
   }
 
@@ -199,18 +176,14 @@ class _AddContributionScreenState
           children: [
             Text(
               'Add money to the trip wallet',
-              style: Theme.of(context)
-                  .textTheme
-                  .headlineSmall,
+              style: Theme.of(context).textTheme.headlineSmall,
             ),
 
             const SizedBox(height: 8),
 
             Text(
               'Record how much a member contributed to the common wallet.',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium,
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
 
             const SizedBox(height: 28),
@@ -225,9 +198,7 @@ class _AddContributionScreenState
               items: _members.map((member) {
                 return DropdownMenuItem<TripMember>(
                   value: member,
-                  child: Text(
-                    '${member.name} (${member.email})',
-                  ),
+                  child: Text('${member.name} (${member.email})'),
                 );
               }).toList(),
               onChanged: (member) {
@@ -241,15 +212,13 @@ class _AddContributionScreenState
 
             TextFormField(
               controller: _amountController,
-              keyboardType:
-                  const TextInputType.numberWithOptions(
+              keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
               decoration: InputDecoration(
                 labelText: 'Amount',
                 prefixText: '${widget.trip.currency} ',
-                prefixIcon:
-                    const Icon(Icons.currency_rupee),
+                prefixIcon: const Icon(Icons.currency_rupee),
                 border: const OutlineInputBorder(),
               ),
               validator: (value) {
@@ -264,8 +233,7 @@ class _AddContributionScreenState
                 }
 
                 if (value.contains('.')) {
-                  final decimals =
-                      value.split('.')[1];
+                  final decimals = value.split('.')[1];
 
                   if (decimals.length > 2) {
                     return 'Maximum 2 decimal places';
@@ -286,14 +254,8 @@ class _AddContributionScreenState
                 border: OutlineInputBorder(),
               ),
               items: const [
-                DropdownMenuItem(
-                  value: 'CASH',
-                  child: Text('Cash'),
-                ),
-                DropdownMenuItem(
-                  value: 'UPI',
-                  child: Text('UPI'),
-                ),
+                DropdownMenuItem(value: 'CASH', child: Text('Cash')),
+                DropdownMenuItem(value: 'UPI', child: Text('UPI')),
                 DropdownMenuItem(
                   value: 'BANK_TRANSFER',
                   child: Text('Bank Transfer'),
@@ -332,16 +294,10 @@ class _AddContributionScreenState
                     ? const SizedBox(
                         width: 20,
                         height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                        ),
+                        child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.add),
-                label: Text(
-                  _submitting
-                      ? 'Adding...'
-                      : 'Add Contribution',
-                ),
+                label: Text(_submitting ? 'Adding...' : 'Add Contribution'),
               ),
             ),
           ],
@@ -357,15 +313,9 @@ class _AddContributionScreenState
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
-              Icons.error_outline,
-              size: 48,
-            ),
+            const Icon(Icons.error_outline, size: 48),
             const SizedBox(height: 16),
-            Text(
-              _error!,
-              textAlign: TextAlign.center,
-            ),
+            Text(_error!, textAlign: TextAlign.center),
             const SizedBox(height: 16),
             OutlinedButton.icon(
               onPressed: _loadMembers,

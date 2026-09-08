@@ -234,9 +234,43 @@ class _ExpenseDetailsScreenState
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                const SizedBox(height: 8),
-                Chip(
-                  label: Text(expense.status),
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Chip(
+                      label: Text(
+                        expense.status,
+                        style: TextStyle(
+                          color: expense.status == 'CONFIRMED'
+                              ? Colors.green.shade900
+                              : Colors.red.shade900,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      backgroundColor: expense.status == 'CONFIRMED'
+                          ? Colors.green.shade50
+                          : Colors.red.shade50,
+                    ),
+                    const SizedBox(width: 8),
+                    Chip(
+                      avatar: Icon(
+                        expense.splitMode == 'CUSTOM'
+                            ? Icons.tune
+                            : (expense.splitMode == 'PERCENTAGE'
+                                ? Icons.percent
+                                : Icons.pie_chart_outline),
+                        size: 16,
+                      ),
+                      label: Text(
+                        expense.splitMode == 'CUSTOM'
+                            ? 'Custom Split'
+                            : (expense.splitMode == 'PERCENTAGE'
+                                ? 'Percentage Split'
+                                : 'Equal Split'),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -303,6 +337,10 @@ class _ExpenseDetailsScreenState
                 const Divider(),
                 ...expense.splits.map((split) {
                   final name = _getPayerName(split.memberId);
+                  final pct = expense.amountPaise > 0
+                      ? (split.amountPaise / expense.amountPaise) * 100
+                      : 0.0;
+
                   return ListTile(
                     dense: true,
                     contentPadding: EdgeInsets.zero,
@@ -314,11 +352,80 @@ class _ExpenseDetailsScreenState
                       ),
                     ),
                     title: Text(name),
+                    subtitle: Text(
+                      '${pct.toStringAsFixed(1)}% of expense',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
                     trailing: Text(
                       _formatMoney(split.amountPaise),
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
+                        fontSize: 14,
                       ),
+                    ),
+                  );
+                }),
+                const SizedBox(height: 8),
+                const Divider(),
+                const SizedBox(height: 4),
+                // Total Verification Row
+                Builder(builder: (context) {
+                  final totalSplitsPaise = expense.splits.fold<int>(
+                    0,
+                    (sum, s) => sum + s.amountPaise,
+                  );
+                  final isExact = totalSplitsPaise == expense.amountPaise;
+
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isExact ? Colors.green.shade50 : Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              isExact
+                                  ? Icons.check_circle_outline
+                                  : Icons.error_outline,
+                              size: 16,
+                              color: isExact ? Colors.green : Colors.red,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              isExact
+                                  ? 'Total Shares (Verified)'
+                                  : 'Split Discrepancy',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: isExact
+                                    ? Colors.green.shade900
+                                    : Colors.red.shade900,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Text(
+                          _formatMoney(totalSplitsPaise),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: isExact
+                                ? Colors.green.shade900
+                                : Colors.red.shade900,
+                          ),
+                        ),
+                      ],
                     ),
                   );
                 }),

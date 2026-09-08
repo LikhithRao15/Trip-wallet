@@ -14,9 +14,45 @@ from app.models.trip_member import TripMember
 from app.models.user import User
 from app.models.wallet import Wallet
 from app.models.wallet_transaction import WalletTransaction
-from app.schemas.expense import ExpenseCreate, ExpenseResponse, ExpenseUpdate
-from app.services.expense_split import calculate_equal_split
+from app.schemas.expense import ExpenseCreate, ExpenseResponse, ExpenseUpdate, SplitInput
+from app.services.expense_split import (
+    calculate_equal_split,
+    calculate_custom_split,
+    calculate_percentage_split,
+)
 from app.services.idempotency import create_request_hash
+
+
+def resolve_splits_from_data(
+    split_mode: str,
+    amount_paise: int,
+    member_ids: list[UUID] | None,
+    splits_input: list[SplitInput] | None,
+) -> dict[UUID, int]:
+    mode = split_mode.strip().upper()
+    if mode == "EQUAL":
+        ids = list(member_ids or [])
+        if not ids and splits_input:
+            ids = [s.member_id for s in splits_input]
+        return calculate_equal_split(amount_paise, ids)
+    elif mode == "CUSTOM":
+        if not splits_input:
+            raise ValueError("Custom splits are required for CUSTOM split mode")
+        custom_splits = [
+            (s.member_id, s.amount_paise if s.amount_paise is not None else 0)
+            for s in splits_input
+        ]
+        return calculate_custom_split(amount_paise, custom_splits)
+    elif mode == "PERCENTAGE":
+        if not splits_input:
+            raise ValueError("Percentage splits are required for PERCENTAGE split mode")
+        pct_splits = [
+            (s.member_id, s.percentage if s.percentage is not None else 0)
+            for s in splits_input
+        ]
+        return calculate_percentage_split(amount_paise, pct_splits)
+    else:
+        raise ValueError(f"Invalid split mode: {split_mode}")
 
 
 router = APIRouter(
@@ -51,11 +87,28 @@ def create_expense(
             detail="Idempotency-Key must be 100 characters or fewer",
         )
 
+    try:
+        splits = resolve_splits_from_data(
+            data.split_mode,
+            data.amount_paise,
+            data.member_ids,
+            data.splits,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        )
+
     request_hash = create_request_hash({
         "amount_paise": data.amount_paise,
         "category": data.category,
         "description": data.description,
-        "member_ids": [str(member_id) for member_id in data.member_ids],
+        "split_mode": data.split_mode,
+        "splits": [
+            {"member_id": str(m_id), "amount_paise": amt}
+            for m_id, amt in sorted(splits.items(), key=lambda x: str(x[0]))
+        ],
     })
     
     # 1. Find trip
@@ -104,37 +157,23 @@ def create_expense(
 
         return existing_expense
 
-
-
-
-    # 3. Get selected members
+    # 3. Validate selected members are active trip members
+    participant_user_ids = list(splits.keys())
     members = db.scalars(
         select(TripMember).where(
             TripMember.trip_id == trip_id,
-            TripMember.user_id.in_(data.member_ids),
+            TripMember.user_id.in_(participant_user_ids),
             TripMember.status == "ACTIVE",
         )
     ).all()
 
-    if len(members) != len(data.member_ids):
+    if len(members) != len(set(participant_user_ids)):
         raise HTTPException(
             status_code=400,
-            detail="One or more selected members are invalid",
+            detail="One or more selected members are invalid or inactive",
         )
 
-    # 4. Calculate split
-    try:
-        splits = calculate_equal_split(
-            data.amount_paise,
-            data.member_ids,
-        )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=str(exc),
-        )
-
-    # 5. Lock wallet
+    # 4. Lock wallet
     wallet = db.scalar(
         select(Wallet)
         .where(Wallet.trip_id == trip_id)
@@ -147,14 +186,14 @@ def create_expense(
             detail="Wallet not found",
         )
 
-    # 6. Check balance
+    # 5. Check balance
     if wallet.balance_paise < data.amount_paise:
         raise HTTPException(
             status_code=400,
             detail="Insufficient wallet balance",
         )
 
-    # 7. Create expense and complete the wallet transaction atomically
+    # 6. Create expense and complete the wallet transaction atomically
     try:
         expense = Expense(
             trip_id=trip_id,
@@ -163,6 +202,7 @@ def create_expense(
             amount_paise=data.amount_paise,
             category=data.category,
             description=data.description,
+            split_mode=data.split_mode,
             status="CONFIRMED",
             idempotency_key=idempotency_key,
             request_hash=request_hash,
@@ -171,7 +211,7 @@ def create_expense(
         db.add(expense)
         db.flush()
 
-        # 8. Create splits
+        # 7. Create splits
         for member_id, amount in splits.items():
             split = ExpenseSplit(
                 expense_id=expense.id,
@@ -564,31 +604,34 @@ def update_expense(
             detail="Only confirmed expenses can be edited",
         )
 
-    # 5. Validate members
-    members = db.scalars(
-        select(TripMember).where(
-            TripMember.trip_id == trip_id,
-            TripMember.user_id.in_(data.member_ids),
-            TripMember.status == "ACTIVE",
-        )
-    ).all()
-
-    if len(members) != len(set(data.member_ids)):
-        raise HTTPException(
-            status_code=400,
-            detail="One or more selected members are invalid",
-        )
-
-    # 6. Calculate new split
+    # 5. Calculate new split
     try:
-        new_splits = calculate_equal_split(
+        new_splits = resolve_splits_from_data(
+            data.split_mode,
             data.amount_paise,
             data.member_ids,
+            data.splits,
         )
     except ValueError as exc:
         raise HTTPException(
             status_code=400,
             detail=str(exc),
+        )
+
+    # 6. Validate participants are active trip members
+    participant_user_ids = list(new_splits.keys())
+    members = db.scalars(
+        select(TripMember).where(
+            TripMember.trip_id == trip_id,
+            TripMember.user_id.in_(participant_user_ids),
+            TripMember.status == "ACTIVE",
+        )
+    ).all()
+
+    if len(members) != len(set(participant_user_ids)):
+        raise HTTPException(
+            status_code=400,
+            detail="One or more selected members are invalid or inactive",
         )
 
     # 7. Lock wallet
@@ -627,6 +670,7 @@ def update_expense(
     expense.amount_paise = data.amount_paise
     expense.category = data.category
     expense.description = data.description
+    expense.split_mode = data.split_mode
 
     # 9. Replace splits
     db.query(ExpenseSplit).filter(

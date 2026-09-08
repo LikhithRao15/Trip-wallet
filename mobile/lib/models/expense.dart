@@ -6,6 +6,7 @@ class Expense {
   final int amountPaise;
   final String category;
   final String? description;
+  final String splitMode;
   final String status;
   final String createdAt;
   final List<ExpenseSplit> splits;
@@ -18,6 +19,7 @@ class Expense {
     required this.amountPaise,
     required this.category,
     this.description,
+    this.splitMode = 'EQUAL',
     required this.status,
     required this.createdAt,
     required this.splits,
@@ -34,6 +36,7 @@ class Expense {
       amountPaise: json['amount_paise'],
       category: json['category'],
       description: json['description'],
+      splitMode: json['split_mode'] ?? 'EQUAL',
       status: json['status'] ?? 'CONFIRMED',
       createdAt: json['created_at']?.toString() ?? '',
       splits: splitsJson

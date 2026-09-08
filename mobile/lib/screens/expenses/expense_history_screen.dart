@@ -33,6 +33,9 @@ class _ExpenseHistoryScreenState extends State<ExpenseHistoryScreen> {
   String? _selectedCategory;
   String? _selectedMemberId;
   String _sortOrder = 'newest';
+  DateTimeRange? _selectedDateRange;
+  double? _minAmount;
+  double? _maxAmount;
 
   bool _isLoading = true;
   String? _error;
@@ -41,7 +44,41 @@ class _ExpenseHistoryScreenState extends State<ExpenseHistoryScreen> {
       _searchController.text.trim().isNotEmpty ||
       _selectedCategory != null ||
       _selectedMemberId != null ||
-      _sortOrder != 'newest';
+      _sortOrder != 'newest' ||
+      _selectedDateRange != null ||
+      _minAmount != null ||
+      _maxAmount != null;
+
+  List<Expense> get _filteredExpenses {
+    return _expenses.where((expense) {
+      if (_selectedDateRange != null) {
+        try {
+          final dt = DateTime.parse(expense.createdAt).toLocal();
+          final start = DateTime(
+            _selectedDateRange!.start.year,
+            _selectedDateRange!.start.month,
+            _selectedDateRange!.start.day,
+          );
+          final end = DateTime(
+            _selectedDateRange!.end.year,
+            _selectedDateRange!.end.month,
+            _selectedDateRange!.end.day,
+            23,
+            59,
+            59,
+          );
+          if (dt.isBefore(start) || dt.isAfter(end)) return false;
+        } catch (_) {}
+      }
+      if (_minAmount != null) {
+        if ((expense.amountPaise / 100) < _minAmount!) return false;
+      }
+      if (_maxAmount != null) {
+        if ((expense.amountPaise / 100) > _maxAmount!) return false;
+      }
+      return true;
+    }).toList();
+  }
 
   @override
   void initState() {
@@ -113,8 +150,93 @@ class _ExpenseHistoryScreenState extends State<ExpenseHistoryScreen> {
       _selectedCategory = null;
       _selectedMemberId = null;
       _sortOrder = 'newest';
+      _selectedDateRange = null;
+      _minAmount = null;
+      _maxAmount = null;
     });
     _loadExpenses();
+  }
+
+  Future<void> _pickDateRange() async {
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialDateRange: _selectedDateRange,
+    );
+    if (picked != null) {
+      setState(() {
+        _selectedDateRange = picked;
+      });
+    }
+  }
+
+  Future<void> _showAmountRangeDialog() async {
+    final minCtrl = TextEditingController(
+      text: _minAmount != null ? _minAmount!.toStringAsFixed(0) : '',
+    );
+    final maxCtrl = TextEditingController(
+      text: _maxAmount != null ? _maxAmount!.toStringAsFixed(0) : '',
+    );
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Filter by Amount'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: minCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: 'Min Amount (${widget.trip.currency})',
+                border: const OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: maxCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: InputDecoration(
+                labelText: 'Max Amount (${widget.trip.currency})',
+                border: const OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              minCtrl.clear();
+              maxCtrl.clear();
+              setState(() {
+                _minAmount = null;
+                _maxAmount = null;
+              });
+              Navigator.pop(ctx, true);
+            },
+            child: const Text('Reset'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final min = double.tryParse(minCtrl.text.trim());
+              final max = double.tryParse(maxCtrl.text.trim());
+              setState(() {
+                _minAmount = min;
+                _maxAmount = max;
+              });
+              Navigator.pop(ctx, true);
+            },
+            child: const Text('Apply'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == true) {
+      setState(() {});
+    }
   }
 
   String _formatMoney(int paise) {
@@ -238,6 +360,42 @@ class _ExpenseHistoryScreenState extends State<ExpenseHistoryScreen> {
           ),
           const SizedBox(width: 12),
 
+          // Date Range Filter Button
+          OutlinedButton.icon(
+            icon: const Icon(Icons.date_range, size: 16),
+            label: Text(
+              _selectedDateRange == null
+                  ? 'Date'
+                  : '${_selectedDateRange!.start.day}/${_selectedDateRange!.start.month} - ${_selectedDateRange!.end.day}/${_selectedDateRange!.end.month}',
+            ),
+            onPressed: _pickDateRange,
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              backgroundColor: _selectedDateRange != null
+                  ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3)
+                  : null,
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // Amount Range Filter Button
+          OutlinedButton.icon(
+            icon: const Icon(Icons.currency_rupee, size: 16),
+            label: Text(
+              _minAmount == null && _maxAmount == null
+                  ? 'Amount'
+                  : '₹${_minAmount?.toStringAsFixed(0) ?? '0'} - ₹${_maxAmount?.toStringAsFixed(0) ?? '∞'}',
+            ),
+            onPressed: _showAmountRangeDialog,
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              backgroundColor: (_minAmount != null || _maxAmount != null)
+                  ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3)
+                  : null,
+            ),
+          ),
+          const SizedBox(width: 8),
+
           // Sort Toggle Button
           OutlinedButton.icon(
             icon: Icon(
@@ -297,7 +455,9 @@ class _ExpenseHistoryScreenState extends State<ExpenseHistoryScreen> {
       );
     }
 
-    if (_expenses.isEmpty) {
+    final filtered = _filteredExpenses;
+
+    if (filtered.isEmpty) {
       return RefreshIndicator(
         onRefresh: _loadExpenses,
         child: ListView(
@@ -331,9 +491,9 @@ class _ExpenseHistoryScreenState extends State<ExpenseHistoryScreen> {
       onRefresh: _loadExpenses,
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
-        itemCount: _expenses.length,
+        itemCount: filtered.length,
         itemBuilder: (context, index) {
-          return _buildExpenseCard(_expenses[index]);
+          return _buildExpenseCard(filtered[index]);
         },
       ),
     );
@@ -344,6 +504,7 @@ class _ExpenseHistoryScreenState extends State<ExpenseHistoryScreen> {
     final dateStr = _formatDate(expense.createdAt);
     final catColor = getExpenseCategoryColor(expense.category);
     final isCancelled = expense.status == 'CANCELLED';
+    final participantCount = expense.splits.length;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -394,14 +555,40 @@ class _ExpenseHistoryScreenState extends State<ExpenseHistoryScreen> {
               const SizedBox(height: 4),
               Row(
                 children: [
-                  Text(
-                    'Paid by $payerName • $dateStr',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade600,
+                  Expanded(
+                    child: Text(
+                      'Paid by $payerName • $dateStr • $participantCount ${participantCount == 1 ? 'member' : 'members'}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  const Spacer(),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 5,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade200,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      expense.splitMode == 'CUSTOM'
+                          ? 'Custom'
+                          : (expense.splitMode == 'PERCENTAGE'
+                              ? 'Pct'
+                              : 'Equal'),
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey.shade800,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 6,

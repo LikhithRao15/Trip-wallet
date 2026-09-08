@@ -23,19 +23,27 @@ class ExpenseService {
     required String category,
     String? description,
     required List<String> memberIds,
+    String splitMode = 'EQUAL',
+    List<Map<String, dynamic>>? splits,
   }) async {
     final token = await _getToken();
 
     final idempotencyKey = '${DateTime.now().microsecondsSinceEpoch}-expense';
 
+    final payload = <String, dynamic>{
+      'amount_paise': amountPaise,
+      'category': category,
+      'description': description,
+      'member_ids': memberIds,
+      'split_mode': splitMode,
+    };
+    if (splits != null && splits.isNotEmpty) {
+      payload['splits'] = splits;
+    }
+
     final response = await _apiClient.post(
       '${ApiConstants.trips}/$tripId/expenses',
-      {
-        'amount_paise': amountPaise,
-        'category': category,
-        'description': description,
-        'member_ids': memberIds,
-      },
+      payload,
       token: token,
       headers: {'Idempotency-Key': idempotencyKey},
     );
@@ -120,17 +128,25 @@ Future<Expense> updateExpense({
   required String category,
   String? description,
   required List<String> memberIds,
+  String splitMode = 'EQUAL',
+  List<Map<String, dynamic>>? splits,
 }) async {
   final token = await _getToken();
 
+  final payload = <String, dynamic>{
+    'amount_paise': amountPaise,
+    'category': category,
+    'description': description,
+    'member_ids': memberIds,
+    'split_mode': splitMode,
+  };
+  if (splits != null && splits.isNotEmpty) {
+    payload['splits'] = splits;
+  }
+
   final response = await _apiClient.put(
     '${ApiConstants.trips}/$tripId/expenses/$expenseId',
-    {
-      'amount_paise': amountPaise,
-      'category': category,
-      'description': description,
-      'member_ids': memberIds,
-    },
+    payload,
     token: token,
   );
 

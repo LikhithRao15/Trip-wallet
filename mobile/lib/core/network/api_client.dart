@@ -73,6 +73,38 @@ class ApiClient {
     );
   }
 
+  Future<String> getRaw(
+    String endpoint, {
+    String? token,
+  }) async {
+    final headers = <String, String>{};
+
+    if (token != null) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+
+    final response = await http.get(
+      Uri.parse(endpoint),
+      headers: headers,
+    );
+
+    if (response.statusCode == 401) {
+      await TokenStorage.instance.clearToken();
+      throw Exception('Session expired. Please log in again.');
+    }
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return response.body;
+    }
+
+    try {
+      final data = jsonDecode(response.body);
+      throw Exception(data['detail']?.toString() ?? 'Request failed');
+    } catch (_) {
+      throw Exception('Request failed with status ${response.statusCode}');
+    }
+  }
+
   Future<Map<String, dynamic>> put(
     String endpoint,
     Map<String, dynamic> body, {

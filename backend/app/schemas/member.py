@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr
@@ -14,3 +15,4 @@ class MemberResponse(BaseModel):
     email: EmailStr
     role: str
     status: str
+    joined_at: datetime | None = None

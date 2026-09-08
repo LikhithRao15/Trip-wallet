@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/trip.dart';
 import '../../models/trip_member.dart';
+import '../../services/auth_service.dart';
 import '../../services/members_service.dart';
 
 class MembersScreen extends StatefulWidget {
@@ -18,10 +19,11 @@ class MembersScreen extends StatefulWidget {
 
 class _MembersScreenState extends State<MembersScreen> {
   final MemberService _memberService = MemberService();
+  final AuthService _authService = AuthService();
   final TextEditingController _emailController = TextEditingController();
 
   List<TripMember> _members = [];
-
+  bool _isAdmin = false;
   bool _isLoading = true;
   bool _isAdding = false;
   String? _error;
@@ -29,13 +31,26 @@ class _MembersScreenState extends State<MembersScreen> {
   @override
   void initState() {
     super.initState();
-    _loadMembers();
+    _loadInitialData();
   }
 
   @override
   void dispose() {
     _emailController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadInitialData() async {
+    try {
+      final user = await _authService.getMe().catchError((_) => null);
+      if (mounted && user != null) {
+        setState(() {
+          _isAdmin = user['id'] == widget.trip.adminId;
+        });
+      }
+    } catch (_) {}
+
+    await _loadMembers();
   }
 
   Future<void> _loadMembers() async {
@@ -57,7 +72,7 @@ class _MembersScreenState extends State<MembersScreen> {
       if (!mounted) return;
 
       setState(() {
-        _error = e.toString();
+        _error = e.toString().replaceFirst('Exception: ', '');
         _isLoading = false;
       });
     }
@@ -86,12 +101,11 @@ class _MembersScreenState extends State<MembersScreen> {
       if (!mounted) return;
 
       _showMessage('Member added successfully');
-
       await _loadMembers();
     } catch (e) {
       if (!mounted) return;
 
-      _showMessage(e.toString());
+      _showMessage(e.toString().replaceFirst('Exception: ', ''));
     } finally {
       if (mounted) {
         setState(() {
@@ -105,9 +119,10 @@ class _MembersScreenState extends State<MembersScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Remove Member?'),
+        title: const Text('Deactivate Member?'),
         content: Text(
-          'Are you sure you want to remove ${member.name} from this trip?',
+          'Are you sure you want to deactivate ${member.name}? '
+          'They will not be included in future expenses, but their past records are preserved.',
         ),
         actions: [
           TextButton(
@@ -117,7 +132,7 @@ class _MembersScreenState extends State<MembersScreen> {
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Remove'),
+            child: const Text('Deactivate'),
           ),
         ],
       ),
@@ -133,7 +148,7 @@ class _MembersScreenState extends State<MembersScreen> {
 
       if (!mounted) return;
 
-      _showMessage('${member.name} removed successfully');
+      _showMessage('${member.name} deactivated successfully');
       await _loadMembers();
     } catch (e) {
       if (!mounted) return;
@@ -149,42 +164,61 @@ class _MembersScreenState extends State<MembersScreen> {
     );
   }
 
+  String _formatDate(String? isoString) {
+    if (isoString == null || isoString.isEmpty) return '';
+    try {
+      final dt = DateTime.parse(isoString).toLocal();
+      return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+    } catch (_) {
+      return isoString;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isClosed = widget.trip.status == 'CLOSED';
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Trip Members'),
+        actions: [
+          IconButton(
+            onPressed: _isLoading ? null : _loadMembers,
+            icon: const Icon(Icons.refresh),
+            tooltip: 'Refresh',
+          ),
+        ],
       ),
       body: Column(
-  children: [
-    if (!isClosed) _buildAddMemberSection(),
-    if (isClosed)
-      Container(
-        width: double.infinity,
-        margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        ),
-        child: const Row(
-          children: [
-            Icon(Icons.lock_outline),
-            SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'This trip is closed. Members can only be viewed.',
+        children: [
+          if (isClosed)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
               ),
-            ),
-          ],
-        ),
+              child: const Row(
+                children: [
+                  Icon(Icons.lock_outline),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'This trip is closed. Members can only be viewed.',
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else if (_isAdmin)
+            _buildAddMemberSection(),
+          Expanded(
+            child: _buildMembersList(isClosed),
+          ),
+        ],
       ),
-    Expanded(
-      child: _buildMembersList(),
-    ),
-  ],
-),
     );
   }
 
@@ -197,27 +231,23 @@ class _MembersScreenState extends State<MembersScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Add Member',
+              'Add Trip Member',
               style: TextStyle(
-                fontSize: 18,
+                fontSize: 16,
                 fontWeight: FontWeight.bold,
               ),
             ),
-
             const SizedBox(height: 12),
-
             TextField(
               controller: _emailController,
               keyboardType: TextInputType.emailAddress,
               decoration: const InputDecoration(
-                labelText: 'Member Email',
-                hintText: 'example@email.com',
+                labelText: 'User Email',
+                hintText: 'user@example.com',
                 prefixIcon: Icon(Icons.email_outlined),
               ),
             ),
-
             const SizedBox(height: 12),
-
             SizedBox(
               width: double.infinity,
               height: 48,
@@ -227,14 +257,10 @@ class _MembersScreenState extends State<MembersScreen> {
                     ? const SizedBox(
                         width: 18,
                         height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                        ),
+                        child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.person_add),
-                label: Text(
-                  _isAdding ? 'Adding...' : 'Add Member',
-                ),
+                label: Text(_isAdding ? 'Adding...' : 'Add Member'),
               ),
             ),
           ],
@@ -243,90 +269,152 @@ class _MembersScreenState extends State<MembersScreen> {
     );
   }
 
-  Widget _buildMembersList() {
-    final isClosed = widget.trip.status == 'CLOSED';
-
+  Widget _buildMembersList(bool isClosed) {
     if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     if (_error != null) {
       return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.error_outline,
-              size: 48,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              _error!,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 12),
-            ElevatedButton(
-              onPressed: _loadMembers,
-              child: const Text('Retry'),
-            ),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, size: 48, color: Colors.red),
+              const SizedBox(height: 12),
+              Text(_error!, textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _loadMembers,
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
         ),
       );
     }
 
     if (_members.isEmpty) {
-      return const Center(
-        child: Text('No members found'),
-      );
+      return const Center(child: Text('No members found'));
     }
 
     return RefreshIndicator(
       onRefresh: _loadMembers,
       child: ListView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         itemCount: _members.length,
         itemBuilder: (context, index) {
           final member = _members[index];
-
-          final isAdmin = member.role == 'ADMIN';
+          final isMemberAdmin = member.role == 'ADMIN';
+          final isActive = member.status == 'ACTIVE';
+          final joinedDate = _formatDate(member.joinedAt);
 
           return Card(
             margin: const EdgeInsets.only(bottom: 10),
             child: ListTile(
               leading: CircleAvatar(
+                backgroundColor: isMemberAdmin
+                    ? Colors.amber.shade100
+                    : Colors.blue.shade100,
                 child: Text(
                   member.name.isNotEmpty
                       ? member.name[0].toUpperCase()
                       : '?',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isMemberAdmin
+                        ? Colors.amber.shade900
+                        : Colors.blue.shade900,
+                  ),
                 ),
               ),
-              title: Text(
-                member.name,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
+              title: Row(
                 children: [
-                  Chip(
-                    label: Text(
-                      isAdmin ? 'ADMIN' : 'MEMBER',
+                  Expanded(
+                    child: Text(
+                      member.name,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        decoration:
+                            !isActive ? TextDecoration.lineThrough : null,
+                      ),
                     ),
                   ),
-                  if (!isClosed && !isAdmin)
-                    IconButton(
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isMemberAdmin
+                          ? Colors.amber.shade100
+                          : Colors.grey.shade200,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      member.role,
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: isMemberAdmin
+                            ? Colors.amber.shade900
+                            : Colors.grey.shade800,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isActive
+                          ? Colors.green.shade100
+                          : Colors.red.shade100,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      member.status,
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: isActive
+                            ? Colors.green.shade900
+                            : Colors.red.shade900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              subtitle: Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      member.email,
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                    ),
+                    if (joinedDate.isNotEmpty)
+                      Text(
+                        'Joined: $joinedDate',
+                        style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                      ),
+                  ],
+                ),
+              ),
+              trailing: (_isAdmin && !isClosed && !isMemberAdmin && isActive)
+                  ? IconButton(
                       icon: const Icon(
                         Icons.remove_circle_outline,
                         color: Colors.red,
                       ),
-                      tooltip: 'Remove Member',
+                      tooltip: 'Deactivate Member',
                       onPressed: () => _removeMember(member),
-                    ),
-                ],
-              ),
+                    )
+                  : null,
             ),
           );
         },

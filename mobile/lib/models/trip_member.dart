@@ -5,6 +5,7 @@ class TripMember {
   final String email;
   final String role;
   final String status;
+  final String? joinedAt;
 
   TripMember({
     required this.id,
@@ -13,6 +14,7 @@ class TripMember {
     required this.email,
     required this.role,
     required this.status,
+    this.joinedAt,
   });
 
   factory TripMember.fromJson(Map<String, dynamic> json) {
@@ -23,6 +25,7 @@ class TripMember {
       email: json['email'],
       role: json['role'] ?? 'MEMBER',
       status: json['status'] ?? 'ACTIVE',
+      joinedAt: json['joined_at']?.toString(),
     );
   }
 }

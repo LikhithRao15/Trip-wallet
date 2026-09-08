@@ -78,6 +78,20 @@ def add_member(
     )
 
     if existing_member:
+        if existing_member.status == "INACTIVE":
+            existing_member.status = "ACTIVE"
+            db.commit()
+            db.refresh(existing_member)
+            return {
+                "id": existing_member.id,
+                "user_id": user.id,
+                "name": user.name,
+                "email": user.email,
+                "role": existing_member.role,
+                "status": existing_member.status,
+                "joined_at": existing_member.joined_at,
+            }
+
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="User is already a member of this trip",
@@ -101,6 +115,7 @@ def add_member(
         "email": user.email,
         "role": member.role,
         "status": member.status,
+        "joined_at": member.joined_at,
     }
 
 
@@ -110,6 +125,7 @@ def add_member(
 )
 def get_members(
     trip_id: UUID,
+    status_filter: str | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -137,14 +153,18 @@ def get_members(
             detail="You are not a member of this trip",
         )
 
-    results = db.execute(
+    stmt = (
         select(TripMember, User)
         .join(User, User.id == TripMember.user_id)
-        .where(
-            TripMember.trip_id == trip_id,
-            TripMember.status == "ACTIVE",
-        )
-    ).all()
+        .where(TripMember.trip_id == trip_id)
+    )
+
+    if status_filter:
+        stmt = stmt.where(TripMember.status == status_filter.strip().upper())
+
+    stmt = stmt.order_by(TripMember.joined_at.asc())
+
+    results = db.execute(stmt).all()
 
     return [
         {
@@ -154,6 +174,7 @@ def get_members(
             "email": user.email,
             "role": trip_member.role,
             "status": trip_member.status,
+            "joined_at": trip_member.joined_at,
         }
         for trip_member, user in results
     ]

@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -244,6 +244,10 @@ def create_expense(
 @router.get("", response_model=list[ExpenseResponse])
 def get_expenses(
     trip_id: UUID,
+    category: str | None = None,
+    member_id: UUID | None = None,
+    search: str | None = None,
+    sort: str = "newest",
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -273,12 +277,53 @@ def get_expenses(
             detail="You are not a member of this trip",
         )
 
-    # Get expenses
-    expenses = db.scalars(
-        select(Expense)
-        .where(Expense.trip_id == trip_id)
-        .order_by(Expense.created_at.desc())
-    ).all()
+    # Base query
+    query = select(Expense).where(Expense.trip_id == trip_id)
+
+    # Filter by category
+    if category:
+        query = query.where(Expense.category == category.strip().upper())
+
+    # Filter by member (handles both TripMember.id and User.id)
+    if member_id:
+        resolved_user_id = member_id
+        tm = db.scalar(
+            select(TripMember).where(
+                TripMember.id == member_id,
+                TripMember.trip_id == trip_id,
+            )
+        )
+        if tm:
+            resolved_user_id = tm.user_id
+
+        query = query.where(
+            or_(
+                Expense.paid_by == resolved_user_id,
+                Expense.id.in_(
+                    select(ExpenseSplit.expense_id).where(
+                        ExpenseSplit.member_id == resolved_user_id
+                    )
+                ),
+            )
+        )
+
+    # Filter by search text (description or category)
+    if search and search.strip():
+        search_pattern = f"%{search.strip()}%"
+        query = query.where(
+            or_(
+                Expense.description.ilike(search_pattern),
+                Expense.category.ilike(search_pattern),
+            )
+        )
+
+    # Sorting
+    if sort == "oldest":
+        query = query.order_by(Expense.created_at.asc())
+    else:
+        query = query.order_by(Expense.created_at.desc())
+
+    expenses = db.scalars(query).all()
 
     # Attach splits
     result = []

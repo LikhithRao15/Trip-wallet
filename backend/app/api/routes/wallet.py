@@ -265,6 +265,10 @@ def add_contribution(
 )
 def get_contributions(
     trip_id: UUID,
+    member_id: UUID | None = None,
+    payment_method: str | None = None,
+    search: str | None = None,
+    sort: str = "newest",
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -294,16 +298,41 @@ def get_contributions(
             detail="You are not a member of this trip",
         )
 
-    # Get contributions
-    contributions = db.scalars(
-        select(Contribution)
-        .where(
-            Contribution.trip_id == trip_id,
+    # Base query
+    query = select(Contribution).where(Contribution.trip_id == trip_id)
+
+    # Filter by member (handles TripMember.id and User.id)
+    if member_id:
+        resolved_user_id = member_id
+        tm = db.scalar(
+            select(TripMember).where(
+                TripMember.id == member_id,
+                TripMember.trip_id == trip_id,
+            )
         )
-        .order_by(
-            Contribution.created_at.desc()
+        if tm:
+            resolved_user_id = tm.user_id
+
+        query = query.where(Contribution.member_id == resolved_user_id)
+
+    # Filter by payment method
+    if payment_method:
+        query = query.where(
+            Contribution.payment_method == payment_method.strip().upper()
         )
-    ).all()
+
+    # Filter by search note
+    if search and search.strip():
+        search_pattern = f"%{search.strip()}%"
+        query = query.where(Contribution.note.ilike(search_pattern))
+
+    # Sorting
+    if sort == "oldest":
+        query = query.order_by(Contribution.created_at.asc())
+    else:
+        query = query.order_by(Contribution.created_at.desc())
+
+    contributions = db.scalars(query).all()
 
     return contributions
 

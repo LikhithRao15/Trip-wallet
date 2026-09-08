@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/constants/expense_categories.dart';
 import '../../models/trip.dart';
 import '../../models/trip_member.dart';
 import '../../services/expense_service.dart';
@@ -32,16 +33,7 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
 
   String _category = 'FOOD';
 
-  final List<String> _categories = [
-    'FOOD',
-    'TRAVEL',
-    'HOTEL',
-    'SHOPPING',
-    'TICKETS',
-    'ENTERTAINMENT',
-    'MEDICAL',
-    'OTHER',
-  ];
+  List<String> get _categories => kExpenseCategories;
 
   @override
   void initState() {
@@ -68,7 +60,7 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
       if (!mounted) return;
 
       setState(() {
-        _members = members;
+        _members = members.where((m) => m.status == 'ACTIVE').toList();
         _loadingMembers = false;
       });
     } catch (e) {

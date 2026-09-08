@@ -1,25 +1,27 @@
 import 'package:flutter/material.dart';
 
-import '../../models/trip.dart';
-import '../../models/wallet_summary.dart';
-import '../../models/trip_member.dart';
-import '../../models/expense.dart';
+import '../../core/constants/expense_categories.dart';
 import '../../models/contribution.dart';
-import 'members_screen.dart';
-import '../wallet/wallet_screen.dart';
-import 'statistics_screen.dart';
-import 'member_financial_screen.dart';
-import 'close_trip_screen.dart';
-import '../expenses/pay_expense_screen.dart';
+import '../../models/expense.dart';
+import '../../models/trip.dart';
+import '../../models/trip_member.dart';
+import '../../models/wallet_summary.dart';
+import '../../services/auth_service.dart';
+import '../../services/contribution_service.dart';
+import '../../services/expense_service.dart';
+import '../../services/members_service.dart';
+import '../../services/trip_service.dart';
+import '../../services/wallet_service.dart';
+import '../expenses/expense_details_screen.dart';
 import '../expenses/expense_history_screen.dart';
+import '../expenses/pay_expense_screen.dart';
 import '../settlement/settlement_screen.dart';
 import '../wallet/contribution_history_screen.dart';
-import '../../services/wallet_service.dart';
-import '../../services/members_service.dart';
-import '../../services/expense_service.dart';
-import '../../services/contribution_service.dart';
-import '../../services/auth_service.dart';
-import '../../services/trip_service.dart';
+import '../wallet/wallet_screen.dart';
+import 'close_trip_screen.dart';
+import 'member_financial_screen.dart';
+import 'members_screen.dart';
+import 'statistics_screen.dart';
 
 class TripDetailsScreen extends StatefulWidget {
   final Trip trip;
@@ -43,8 +45,12 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   int? _memberCount;
   int? _expenseCount;
   int? _contributionCount;
+  List<Expense> _recentExpenses = [];
+  List<Contribution> _recentContributions = [];
+  Map<String, String> _memberNames = {};
   bool _isAdmin = false;
   bool _isLoading = true;
+  String? _error;
 
   @override
   void initState() {
@@ -54,6 +60,11 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   }
 
   Future<void> _loadDashboard() async {
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
     try {
       final tripFuture =
           _tripService.getTrip(_trip.id).catchError((_) => _trip);
@@ -93,18 +104,29 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
       final contributions = results[4] as List<Contribution>;
       final currentUser = results[5] as Map<String, dynamic>?;
 
+      final names = <String, String>{};
+      for (final m in members) {
+        names[m.userId] = m.name;
+        names[m.id] = m.name;
+      }
+
       setState(() {
         _trip = updatedTrip;
         _walletSummary = summary;
         _memberCount = members.length;
         _expenseCount = expenses.length;
         _contributionCount = contributions.length;
+        _recentExpenses = expenses.take(3).toList();
+        _recentContributions = contributions.take(3).toList();
+        _memberNames = names;
         _isAdmin = currentUser != null && currentUser['id'] == _trip.adminId;
         _isLoading = false;
+        _error = null;
       });
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
         setState(() {
+          _error = e.toString().replaceFirst('Exception: ', '');
           _isLoading = false;
         });
       }
@@ -113,6 +135,15 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
 
   String _formatMoney(int paise) {
     return '${_trip.currency} ${(paise / 100).toStringAsFixed(2)}';
+  }
+
+  String _formatDate(String isoString) {
+    try {
+      final dt = DateTime.parse(isoString).toLocal();
+      return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+    } catch (_) {
+      return isoString;
+    }
   }
 
   @override
@@ -130,205 +161,235 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadDashboard,
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-            _buildTripHeader(),
-            const SizedBox(height: 16),
-            _buildMetricsGrid(),
-            const SizedBox(height: 20),
+      body: _buildBody(isClosed),
+    );
+  }
 
-            _buildSection(
-              context,
-              icon: Icons.people_outline,
-              title: 'Members',
-              subtitle: isClosed
-                  ? 'View trip members (${_memberCount ?? 0})'
-                  : 'Manage trip members (${_memberCount ?? 0})',
-              onTap: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => MembersScreen(trip: _trip),
-                  ),
-                );
-                _loadDashboard();
-              },
+  Widget _buildBody(bool isClosed) {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_error != null && _walletSummary == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, size: 48, color: Colors.red),
+              const SizedBox(height: 12),
+              Text(_error!, textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _loadDashboard,
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadDashboard,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _buildTripHeader(),
+          const SizedBox(height: 16),
+          _buildMetricsGrid(),
+          const SizedBox(height: 20),
+          _buildRecentExpensesSection(),
+          _buildRecentContributionsSection(),
+          const SizedBox(height: 8),
+          const Text(
+            'Trip Management',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
             ),
-
-            _buildSection(
-              context,
-              icon: Icons.account_balance_wallet_outlined,
-              title: 'Wallet',
-              subtitle: _walletSummary != null
-                  ? 'Balance: ${_formatMoney(_walletSummary!.balancePaise)}'
-                  : 'View common trip wallet',
-              onTap: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => WalletScreen(trip: _trip),
-                  ),
-                );
-                _loadDashboard();
-              },
-            ),
-
-            _buildSection(
-              context,
-              icon: Icons.payments_outlined,
-              title: 'Contributions',
-              subtitle: isClosed
-                  ? 'View all contributions (${_contributionCount ?? 0})'
-                  : 'Record and view contributions (${_contributionCount ?? 0})',
-              onTap: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ContributionHistoryScreen(trip: _trip),
-                  ),
-                );
-                _loadDashboard();
-              },
-            ),
-
-            _buildSection(
-              context,
-              icon: Icons.account_balance_outlined,
-              title: 'Member Finances',
-              subtitle: 'View contributions and spending by member',
-              onTap: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => MemberFinancialScreen(trip: _trip),
-                  ),
-                );
-                _loadDashboard();
-              },
-            ),
-
-            _buildSection(
-              context,
-              icon: Icons.receipt_long_outlined,
-              title: 'Pay / Expenses',
-              subtitle: isClosed
-                  ? 'View trip expenses (${_expenseCount ?? 0})'
-                  : 'Record expenses from the common wallet (${_expenseCount ?? 0})',
-              onTap: () {
-                if (isClosed) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ExpenseHistoryScreen(trip: _trip),
-                    ),
-                  ).then((_) => _loadDashboard());
-                  return;
-                }
-
-                showModalBottomSheet(
-                  context: context,
-                  builder: (context) {
-                    return SafeArea(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          ListTile(
-                            leading: const Icon(Icons.payment),
-                            title: const Text('Pay New Expense'),
-                            subtitle: const Text(
-                              'Record an expense from the common wallet',
-                            ),
-                            onTap: () {
-                              Navigator.pop(context);
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => PayExpenseScreen(trip: _trip),
-                                ),
-                              ).then((_) => _loadDashboard());
-                            },
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.receipt_long),
-                            title: const Text('Expense History'),
-                            subtitle: const Text('View all trip expenses'),
-                            onTap: () {
-                              Navigator.pop(context);
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) =>
-                                      ExpenseHistoryScreen(trip: _trip),
-                                ),
-                              ).then((_) => _loadDashboard());
-                            },
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-
-            _buildSection(
-              context,
-              icon: Icons.bar_chart_outlined,
-              title: 'Statistics',
-              subtitle: 'View trip spending statistics',
-              onTap: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => StatisticsScreen(trip: _trip),
-                  ),
-                );
-                _loadDashboard();
-              },
-            ),
-
-            _buildSection(
-              context,
-              icon: Icons.handshake_outlined,
-              title: 'Settlement',
-              subtitle: 'Calculate who should receive or pay',
-              onTap: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => SettlementScreen(trip: _trip),
-                  ),
-                );
-                _loadDashboard();
-              },
-            ),
-
-            if (!isClosed && _isAdmin)
-              _buildSection(
+          ),
+          const SizedBox(height: 12),
+          _buildSection(
+            context,
+            icon: Icons.people_outline,
+            title: 'Members',
+            subtitle: isClosed
+                ? 'View trip members (${_memberCount ?? 0})'
+                : 'Manage trip members (${_memberCount ?? 0})',
+            onTap: () async {
+              await Navigator.push(
                 context,
-                icon: Icons.lock_outline,
-                title: 'Close Trip',
-                subtitle: 'Finalise the trip and lock financial changes',
-                onTap: () async {
-                  final result = await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => CloseTripScreen(trip: _trip),
+                MaterialPageRoute(
+                  builder: (context) => MembersScreen(trip: _trip),
+                ),
+              );
+              _loadDashboard();
+            },
+          ),
+          _buildSection(
+            context,
+            icon: Icons.account_balance_wallet_outlined,
+            title: 'Wallet',
+            subtitle: _walletSummary != null
+                ? 'Balance: ${_formatMoney(_walletSummary!.balancePaise)}'
+                : 'View common trip wallet',
+            onTap: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => WalletScreen(trip: _trip),
+                ),
+              );
+              _loadDashboard();
+            },
+          ),
+          _buildSection(
+            context,
+            icon: Icons.payments_outlined,
+            title: 'Contributions',
+            subtitle: isClosed
+                ? 'View all contributions (${_contributionCount ?? 0})'
+                : 'Record and view contributions (${_contributionCount ?? 0})',
+            onTap: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ContributionHistoryScreen(trip: _trip),
+                ),
+              );
+              _loadDashboard();
+            },
+          ),
+          _buildSection(
+            context,
+            icon: Icons.account_balance_outlined,
+            title: 'Member Finances',
+            subtitle: 'View contributions and spending by member',
+            onTap: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => MemberFinancialScreen(trip: _trip),
+                ),
+              );
+              _loadDashboard();
+            },
+          ),
+          _buildSection(
+            context,
+            icon: Icons.receipt_long_outlined,
+            title: 'Pay / Expenses',
+            subtitle: isClosed
+                ? 'View trip expenses (${_expenseCount ?? 0})'
+                : 'Record expenses from the common wallet (${_expenseCount ?? 0})',
+            onTap: () {
+              if (isClosed) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ExpenseHistoryScreen(trip: _trip),
+                  ),
+                ).then((_) => _loadDashboard());
+                return;
+              }
+
+              showModalBottomSheet(
+                context: context,
+                builder: (context) {
+                  return SafeArea(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ListTile(
+                          leading: const Icon(Icons.payment),
+                          title: const Text('Pay New Expense'),
+                          subtitle: const Text(
+                            'Record an expense from the common wallet',
+                          ),
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => PayExpenseScreen(trip: _trip),
+                              ),
+                            ).then((_) => _loadDashboard());
+                          },
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.receipt_long),
+                          title: const Text('Expense History'),
+                          subtitle: const Text('View all trip expenses'),
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    ExpenseHistoryScreen(trip: _trip),
+                              ),
+                            ).then((_) => _loadDashboard());
+                          },
+                        ),
+                      ],
                     ),
                   );
-
-                  if (result == true && context.mounted) {
-                    Navigator.pop(context, true);
-                  }
                 },
-              ),
-          ],
-        ),
+              );
+            },
+          ),
+          _buildSection(
+            context,
+            icon: Icons.bar_chart_outlined,
+            title: 'Statistics',
+            subtitle: 'View trip spending statistics',
+            onTap: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => StatisticsScreen(trip: _trip),
+                ),
+              );
+              _loadDashboard();
+            },
+          ),
+          _buildSection(
+            context,
+            icon: Icons.handshake_outlined,
+            title: 'Settlement',
+            subtitle: 'Calculate who should receive or pay',
+            onTap: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => SettlementScreen(trip: _trip),
+                ),
+              );
+              _loadDashboard();
+            },
+          ),
+          if (!isClosed && _isAdmin)
+            _buildSection(
+              context,
+              icon: Icons.lock_outline,
+              title: 'Close Trip',
+              subtitle: 'Finalise the trip and lock financial changes',
+              onTap: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CloseTripScreen(trip: _trip),
+                  ),
+                );
+
+                if (result == true && mounted) {
+                  Navigator.pop(context, true);
+                }
+              },
+            ),
+        ],
       ),
     );
   }
@@ -337,49 +398,277 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     final balanceStr = _walletSummary != null
         ? _formatMoney(_walletSummary!.balancePaise)
         : '—';
+    final totalContribStr = _walletSummary != null
+        ? _formatMoney(_walletSummary!.totalContributionsPaise)
+        : '—';
+    final totalExpenseStr = _walletSummary != null
+        ? _formatMoney(_walletSummary!.totalExpensesPaise)
+        : '—';
     final memberStr = _memberCount != null ? '$_memberCount' : '—';
     final expenseStr = _expenseCount != null ? '$_expenseCount' : '—';
     final contributionStr =
         _contributionCount != null ? '$_contributionCount' : '—';
 
-    return Row(
+    return Column(
       children: [
-        Expanded(
-          child: _buildMetricCard(
-            'Wallet Balance',
-            balanceStr,
-            Icons.account_balance_wallet,
-            Colors.green,
+        Card(
+          color: Theme.of(context).colorScheme.primaryContainer,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.account_balance_wallet,
+                  size: 34,
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Common Wallet Balance',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onPrimaryContainer
+                              .withValues(alpha: 0.8),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        balanceStr,
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color:
+                              Theme.of(context).colorScheme.onPrimaryContainer,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _buildMetricCard(
-            'Members',
-            memberStr,
-            Icons.people,
-            Colors.blue,
-          ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _buildMetricCard(
+                'Total Inflow',
+                totalContribStr,
+                Icons.arrow_downward,
+                Colors.green,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _buildMetricCard(
+                'Total Outflow',
+                totalExpenseStr,
+                Icons.arrow_upward,
+                Colors.orange,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _buildMetricCard(
-            'Expenses',
-            expenseStr,
-            Icons.receipt_long,
-            Colors.orange,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: _buildMetricCard(
-            'Contributions',
-            contributionStr,
-            Icons.payments,
-            Colors.purple,
-          ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _buildMetricCard(
+                'Members',
+                memberStr,
+                Icons.people,
+                Colors.blue,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _buildMetricCard(
+                'Expenses',
+                expenseStr,
+                Icons.receipt_long,
+                Colors.deepOrange,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _buildMetricCard(
+                'Contributions',
+                contributionStr,
+                Icons.payments,
+                Colors.purple,
+              ),
+            ),
+          ],
         ),
       ],
+    );
+  }
+
+  Widget _buildRecentExpensesSection() {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Recent Expenses',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ExpenseHistoryScreen(trip: _trip),
+                      ),
+                    ).then((_) => _loadDashboard());
+                  },
+                  child: const Text('View All'),
+                ),
+              ],
+            ),
+            if (_recentExpenses.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  'No expenses recorded yet.',
+                  style: TextStyle(color: Colors.grey.shade600),
+                ),
+              )
+            else
+              ..._recentExpenses.map((expense) {
+                final payerName = _memberNames[expense.paidBy] ?? 'Member';
+                final catColor = getExpenseCategoryColor(expense.category);
+                return ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: CircleAvatar(
+                    backgroundColor: catColor.withValues(alpha: 0.15),
+                    child: Icon(
+                      getExpenseCategoryIcon(expense.category),
+                      color: catColor,
+                      size: 18,
+                    ),
+                  ),
+                  title: Text(
+                    expense.description?.isNotEmpty == true
+                        ? expense.description!
+                        : expense.category,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(
+                    'Paid by $payerName • ${_formatDate(expense.createdAt)}',
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  trailing: Text(
+                    _formatMoney(expense.amountPaise),
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ExpenseDetailsScreen(
+                          trip: _trip,
+                          expenseId: expense.id,
+                        ),
+                      ),
+                    ).then((_) => _loadDashboard());
+                  },
+                );
+              }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRecentContributionsSection() {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Recent Contributions',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            ContributionHistoryScreen(trip: _trip),
+                      ),
+                    ).then((_) => _loadDashboard());
+                  },
+                  child: const Text('View All'),
+                ),
+              ],
+            ),
+            if (_recentContributions.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  'No contributions recorded yet.',
+                  style: TextStyle(color: Colors.grey.shade600),
+                ),
+              )
+            else
+              ..._recentContributions.map((contrib) {
+                final memberName = _memberNames[contrib.memberId] ?? 'Member';
+                return ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: CircleAvatar(
+                    child: Text(
+                      memberName.isNotEmpty
+                          ? memberName[0].toUpperCase()
+                          : '?',
+                      style: const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  title: Text(
+                    memberName,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    '${contrib.paymentMethod} • ${_formatDate(contrib.createdAt)}',
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  trailing: Text(
+                    _formatMoney(contrib.amountPaise),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green,
+                    ),
+                  ),
+                );
+              }),
+          ],
+        ),
+      ),
     );
   }
 
@@ -394,15 +683,15 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
         child: Column(
           children: [
-            Icon(icon, size: 22, color: color),
-            const SizedBox(height: 6),
+            Icon(icon, size: 20, color: color),
+            const SizedBox(height: 4),
             FittedBox(
               fit: BoxFit.scaleDown,
               child: Text(
                 value,
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
-                  fontSize: 14,
+                  fontSize: 13,
                 ),
               ),
             ),
@@ -470,14 +759,11 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                 ),
               ],
             ),
-
             if (_trip.description != null && _trip.description!.isNotEmpty) ...[
               const SizedBox(height: 16),
               Text(_trip.description!),
             ],
-
             const SizedBox(height: 16),
-
             Row(
               children: [
                 const Icon(Icons.currency_exchange, size: 20),
@@ -485,7 +771,6 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                 Text('Currency: ${_trip.currency}'),
               ],
             ),
-
             if (_trip.startDate != null || _trip.endDate != null) ...[
               const SizedBox(height: 8),
               Row(
@@ -512,7 +797,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
         leading: CircleAvatar(child: Icon(icon)),
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
         subtitle: Text(subtitle),

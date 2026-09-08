@@ -49,11 +49,36 @@ class ContributionService {
     );
   }
 
-  Future<List<Contribution>> getContributions(String tripId) async {
+  Future<List<Contribution>> getContributions(
+    String tripId, {
+    String? memberId,
+    String? paymentMethod,
+    String? search,
+    String? sort,
+  }) async {
     final token = await _getToken();
 
+    final queryParams = <String, String>{};
+    if (memberId != null && memberId.isNotEmpty) {
+      queryParams['member_id'] = memberId;
+    }
+    if (paymentMethod != null && paymentMethod.isNotEmpty) {
+      queryParams['payment_method'] = paymentMethod;
+    }
+    if (search != null && search.trim().isNotEmpty) {
+      queryParams['search'] = search.trim();
+    }
+    if (sort != null && sort.isNotEmpty) {
+      queryParams['sort'] = sort;
+    }
+
+    final uri =
+        Uri.parse('${ApiConstants.trips}/$tripId/contributions').replace(
+      queryParameters: queryParams.isNotEmpty ? queryParams : null,
+    );
+
     final response = await _apiClient.get(
-      '${ApiConstants.trips}/$tripId/contributions',
+      uri.toString(),
       token: token,
     );
 

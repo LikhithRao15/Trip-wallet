@@ -43,11 +43,35 @@ class ExpenseService {
     return Expense.fromJson(Map<String, dynamic>.from(response));
   }
 
-  Future<List<Expense>> getExpenses(String tripId) async {
+  Future<List<Expense>> getExpenses(
+    String tripId, {
+    String? category,
+    String? memberId,
+    String? search,
+    String? sort,
+  }) async {
     final token = await _getToken();
 
+    final queryParams = <String, String>{};
+    if (category != null && category.isNotEmpty) {
+      queryParams['category'] = category;
+    }
+    if (memberId != null && memberId.isNotEmpty) {
+      queryParams['member_id'] = memberId;
+    }
+    if (search != null && search.trim().isNotEmpty) {
+      queryParams['search'] = search.trim();
+    }
+    if (sort != null && sort.isNotEmpty) {
+      queryParams['sort'] = sort;
+    }
+
+    final uri = Uri.parse('${ApiConstants.trips}/$tripId/expenses').replace(
+      queryParameters: queryParams.isNotEmpty ? queryParams : null,
+    );
+
     final response = await _apiClient.get(
-      '${ApiConstants.trips}/$tripId/expenses',
+      uri.toString(),
       token: token,
     );
 

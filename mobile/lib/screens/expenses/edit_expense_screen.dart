@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/constants/expense_categories.dart';
 import '../../models/expense.dart';
 import '../../models/trip.dart';
 import '../../models/trip_member.dart';
@@ -38,16 +39,7 @@ class _EditExpenseScreenState extends State<EditExpenseScreen> {
   bool _saving = false;
   String? _error;
 
-  final List<String> _categories = [
-    'FOOD',
-    'TRAVEL',
-    'HOTEL',
-    'SHOPPING',
-    'TICKETS',
-    'ENTERTAINMENT',
-    'MEDICAL',
-    'OTHER',
-  ];
+  List<String> get _categories => kExpenseCategories;
 
   @override
   void initState() {

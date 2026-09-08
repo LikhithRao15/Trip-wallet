@@ -25,7 +25,16 @@ part 'app_database.g.dart';
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor])
-      : super(executor ?? driftDatabase(name: 'trip_wallet'));
+    : super(
+        executor ??
+            driftDatabase(
+              name: 'trip_wallet',
+              web: DriftWebOptions(
+                sqlite3Wasm: Uri.parse('sqlite3.wasm'),
+                driftWorker: Uri.parse('drift_worker.js'),
+              ),
+            ),
+      );
 
   static AppDatabase? _instance;
   static AppDatabase get instance => _instance ??= AppDatabase();

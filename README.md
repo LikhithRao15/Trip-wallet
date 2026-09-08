@@ -34,11 +34,19 @@ A trip has one **ADMIN** and multiple **MEMBERS**.
 - PostgreSQL 15+
 
 ### 1. Environment Configuration
-Create a `.env` file inside `backend/`:
+Create a `.env` file inside `backend/` (see `backend/.env.example` for reference):
 ```env
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/trip_wallet
+DATABASE_URL=postgresql://tripwallet:tripwallet_password@localhost:5432/tripwallet
 SECRET_KEY=your-secure-jwt-secret-key-at-least-32-chars
+ENVIRONMENT=development
+CORS_ORIGINS=*
+LOG_LEVEL=INFO
 ```
+
+> **Note on Real UPI / Payment Gateways**:
+> Real UPI and payment gateway integrations are planned for future phases. All current transactions operate on the verified server ledger model.
+
+See [`docs/PRODUCTION_HARDENING.md`](docs/PRODUCTION_HARDENING.md) and [`docs/OFFLINE_AND_SYNC.md`](docs/OFFLINE_AND_SYNC.md) for full operational guides.
 
 ### 2. Install Dependencies & Setup Venv
 ```bash

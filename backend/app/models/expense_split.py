@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, String
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
@@ -34,4 +34,9 @@ class ExpenseSplit(Base):
         DateTime,
         default=datetime.utcnow,
         nullable=False,
+    )
+
+    __table_args__ = (
+        Index("ix_expense_splits_expense_id", "expense_id"),
+        Index("ix_expense_splits_member_id", "member_id"),
     )

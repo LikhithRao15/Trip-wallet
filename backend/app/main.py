@@ -1,8 +1,11 @@
-from fastapi import FastAPI, Depends
+import logging
+from fastapi import FastAPI, Depends, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.db.database import get_db
 from app.api.routes.auth import router as auth_router
 from app.api.routes.trips import router as trips_router
@@ -16,18 +19,44 @@ from app.api.routes.notifications import router as notifications_router
 from app.api.routes.activity import router as activity_router
 from app.api.routes.sync import router as sync_router
 
+logger = logging.getLogger("trip_wallet")
+logging.basicConfig(level=settings.LOG_LEVEL)
+
 app = FastAPI(
     title="Trip Wallet API",
     description="Backend API for the Trip Wallet application",
     version="1.0.0",
 )
+
+# Production CORS configuration
+cors_origins = settings.cors_origin_list
+allow_creds = True
+if "*" in cors_origins and settings.ENVIRONMENT == "production":
+    # In production, do not pair allow_origins=["*"] with allow_credentials=True
+    allow_creds = False
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=cors_origins,
+    allow_credentials=allow_creds,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Catch-all exception handler to ensure internal stack traces, SQL errors,
+    or implementation paths are never leaked to clients.
+    """
+    logger.exception("Unhandled server exception on %s %s: %s", request.method, request.url.path, exc)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "An internal server error occurred. Please try again later."},
+    )
+
+
 app.include_router(auth_router)
 app.include_router(trips_router)
 app.include_router(members_router)
@@ -40,6 +69,7 @@ app.include_router(notifications_router)
 app.include_router(activity_router)
 app.include_router(sync_router)
 
+
 @app.get("/")
 def root():
     return {
@@ -50,10 +80,20 @@ def root():
 
 @app.get("/health")
 def health_check(db: Session = Depends(get_db)):
-
-    db.execute(text("SELECT 1"))
+    try:
+        db.execute(text("SELECT 1"))
+        db_status = "connected"
+    except Exception as e:
+        logger.error("Health check database error: %s", e)
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "status": "unhealthy",
+                "database": "disconnected",
+            },
+        )
 
     return {
         "status": "healthy",
-        "database": "connected",
+        "database": db_status,
     }

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
@@ -75,9 +75,14 @@ class Expense(Base):
     )    
 
     __table_args__ = (
-    UniqueConstraint(
-        "trip_id",
-        "idempotency_key",
-        name="uq_expense_idempotency",
-    ),
-)
+        UniqueConstraint(
+            "trip_id",
+            "idempotency_key",
+            name="uq_expense_idempotency",
+        ),
+        Index(
+            "ix_expenses_trip_created",
+            "trip_id",
+            "created_at",
+        ),
+    )

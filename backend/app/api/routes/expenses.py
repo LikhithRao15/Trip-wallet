@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy import select, or_
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -321,6 +321,8 @@ def get_expenses(
     member_id: UUID | None = None,
     search: str | None = None,
     sort: str = "newest",
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -396,21 +398,28 @@ def get_expenses(
     else:
         query = query.order_by(Expense.created_at.desc())
 
+    # Pagination
+    query = query.limit(limit).offset(offset)
+
     expenses = db.scalars(query).all()
 
-    # Attach splits
-    result = []
+    if not expenses:
+        return []
+
+    # Batch load splits to prevent N+1 queries
+    expense_ids = [e.id for e in expenses]
+    all_splits = db.scalars(
+        select(ExpenseSplit).where(ExpenseSplit.expense_id.in_(expense_ids))
+    ).all()
+
+    splits_by_expense: dict[UUID, list[ExpenseSplit]] = {e_id: [] for e_id in expense_ids}
+    for s in all_splits:
+        splits_by_expense[s.expense_id].append(s)
 
     for expense in expenses:
-        expense.splits = db.scalars(
-            select(ExpenseSplit).where(
-                ExpenseSplit.expense_id == expense.id
-            )
-        ).all()
+        expense.splits = splits_by_expense.get(expense.id, [])
 
-        result.append(expense)
-
-    return result
+    return expenses
 
 @router.get(
     "/{expense_id}",

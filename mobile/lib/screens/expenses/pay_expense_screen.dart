@@ -6,6 +6,8 @@ import '../../models/trip.dart';
 import '../../models/trip_member.dart';
 import '../../services/expense_service.dart';
 import '../../services/members_service.dart';
+import '../../services/wallet_service.dart';
+import '../../widgets/expense_confirm_dialog.dart';
 
 class PayExpenseScreen extends StatefulWidget {
   final Trip trip;
@@ -24,6 +26,7 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
 
   final MemberService _memberService = MemberService();
   final ExpenseService _expenseService = ExpenseService();
+  final WalletService _walletService = WalletService();
 
   List<TripMember> _members = [];
   final Set<String> _selectedMemberIds = {};
@@ -297,6 +300,75 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
         };
       }).toList();
     }
+
+    // Prepare split breakdowns for confirmation dialog
+    final memberNameMap = {for (final m in _members) m.userId: m.name};
+    final List<ExpenseSplitBreakdown> breakdowns = [];
+
+    if (_splitMode == 'EQUAL') {
+      final sharePaise = (amountPaise / _selectedMemberIds.length).floor();
+      final remainder = amountPaise % _selectedMemberIds.length;
+      final sortedIds = _selectedMemberIds.toList();
+      for (int i = 0; i < sortedIds.length; i++) {
+        final uid = sortedIds[i];
+        final p = sharePaise + (i < remainder ? 1 : 0);
+        breakdowns.add(ExpenseSplitBreakdown(
+          memberName: memberNameMap[uid] ?? 'Member',
+          amountPaise: p,
+        ));
+      }
+    } else if (_splitMode == 'CUSTOM') {
+      for (final s in splitsPayload!) {
+        final uid = s['member_id'] as String;
+        breakdowns.add(ExpenseSplitBreakdown(
+          memberName: memberNameMap[uid] ?? 'Member',
+          amountPaise: s['amount_paise'] as int,
+        ));
+      }
+    } else if (_splitMode == 'PERCENTAGE') {
+      for (final s in splitsPayload!) {
+        final uid = s['member_id'] as String;
+        final pct = s['percentage'] as double;
+        final paise = ((amountPaise * pct) / 100.0).round();
+        breakdowns.add(ExpenseSplitBreakdown(
+          memberName: memberNameMap[uid] ?? 'Member',
+          amountPaise: paise,
+          percentage: pct.toStringAsFixed(2),
+        ));
+      }
+    }
+
+    // Fetch current wallet balance for pre-flight projection
+    int currentBalancePaise = 0;
+    try {
+      final summary = await _walletService.getWalletSummary(widget.trip.id);
+      currentBalancePaise = summary.balancePaise;
+    } catch (_) {
+      // Fallback if summary load fails
+    }
+
+    if (!mounted) return;
+
+    // Show Confirmation Dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => ExpenseConfirmDialog(
+        tripCurrency: widget.trip.currency,
+        totalAmountPaise: amountPaise,
+        category: _category,
+        description: _descriptionController.text.trim().isEmpty
+            ? null
+            : _descriptionController.text.trim(),
+        currentWalletBalancePaise: currentBalancePaise,
+        splits: breakdowns,
+      ),
+    );
+
+    if (confirmed != true) {
+      return;
+    }
+
+    if (!mounted) return;
 
     setState(() {
       _submitting = true;

@@ -6,6 +6,7 @@ from sqlalchemy import (
     BigInteger,
     DateTime,
     ForeignKey,
+    Index,
     String,
     Text,
 )
@@ -61,4 +62,8 @@ class WalletTransaction(Base):
         DateTime,
         default=datetime.utcnow,
         nullable=False,
+    )
+
+    __table_args__ = (
+        Index("ix_wallet_tx_wallet_created", "wallet_id", "created_at"),
     )

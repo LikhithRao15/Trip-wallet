@@ -6,6 +6,7 @@ from sqlalchemy import (
     BigInteger,
     DateTime,
     ForeignKey,
+    Index,
     String,
     Text,
     UniqueConstraint
@@ -82,5 +83,10 @@ class Contribution(Base):
             "trip_id",
             "idempotency_key",
             name="uq_contribution_idempotency",
+        ),
+        Index(
+            "ix_contributions_trip_created",
+            "trip_id",
+            "created_at",
         ),
     )

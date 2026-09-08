@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends,Header ,HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -309,6 +309,8 @@ def get_contributions(
     payment_method: str | None = None,
     search: str | None = None,
     sort: str = "newest",
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -372,6 +374,8 @@ def get_contributions(
     else:
         query = query.order_by(Contribution.created_at.desc())
 
+    query = query.limit(limit).offset(offset)
+
     contributions = db.scalars(query).all()
 
     return contributions
@@ -382,6 +386,8 @@ def get_contributions(
 )
 def get_wallet_transactions(
     trip_id: UUID,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -433,6 +439,8 @@ def get_wallet_transactions(
         .order_by(
             WalletTransaction.created_at.desc()
         )
+        .limit(limit)
+        .offset(offset)
     ).all()
 
     return transactions

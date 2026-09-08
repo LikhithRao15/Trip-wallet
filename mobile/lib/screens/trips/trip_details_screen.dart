@@ -22,6 +22,7 @@ import 'close_trip_screen.dart';
 import 'member_financial_screen.dart';
 import 'members_screen.dart';
 import 'statistics_screen.dart';
+import 'trip_activity_screen.dart';
 
 class TripDetailsScreen extends StatefulWidget {
   final Trip trip;
@@ -154,6 +155,21 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
       appBar: AppBar(
         title: Text(_trip.name),
         actions: [
+          IconButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => TripActivityScreen(
+                    tripId: _trip.id,
+                    tripName: _trip.name,
+                  ),
+                ),
+              );
+            },
+            icon: const Icon(Icons.history_rounded),
+            tooltip: 'Activity Timeline',
+          ),
           IconButton(
             onPressed: _isLoading ? null : _loadDashboard,
             icon: const Icon(Icons.refresh),
@@ -353,6 +369,23 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                 ),
               );
               _loadDashboard();
+            },
+          ),
+          _buildSection(
+            context,
+            icon: Icons.history_rounded,
+            title: 'Activity Timeline',
+            subtitle: 'View full audit log of trip events',
+            onTap: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => TripActivityScreen(
+                    tripId: _trip.id,
+                    tripName: _trip.name,
+                  ),
+                ),
+              );
             },
           ),
           _buildSection(

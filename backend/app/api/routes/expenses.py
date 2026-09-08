@@ -21,6 +21,10 @@ from app.services.expense_split import (
     calculate_percentage_split,
 )
 from app.services.idempotency import create_request_hash
+from app.services.activity_service import (
+    record_activity,
+    create_trip_notifications,
+)
 
 
 def resolve_splits_from_data(
@@ -241,6 +245,29 @@ def create_expense(
         )
 
         db.add(transaction)
+
+        record_activity(
+            db=db,
+            trip_id=trip_id,
+            actor_user_id=current_user.id,
+            event_type="EXPENSE_CREATED",
+            entity_type="EXPENSE",
+            entity_id=expense.id,
+            message=f"{current_user.name} added expense '{expense.description or expense.category}' of ₹{expense.amount_paise / 100:.2f}",
+        )
+
+        notify_user_ids = set(splits.keys()) | {trip.admin_id}
+        notify_user_ids.discard(current_user.id)
+        create_trip_notifications(
+            db=db,
+            user_ids=notify_user_ids,
+            trip_id=trip_id,
+            notification_type="EXPENSE_ADDED",
+            title="New Expense Added",
+            body=f"'{expense.description or expense.category}' of ₹{expense.amount_paise / 100:.2f} was added to '{trip.name}'.",
+            entity_type="EXPENSE",
+            entity_id=expense.id,
+        )
 
         # 11. Commit everything together
         db.commit()
@@ -546,15 +573,39 @@ def cancel_expense(
     # 9. Mark expense cancelled
     expense.status = "CANCELLED"
 
-    db.commit()
-    db.refresh(expense)
-
-    # 10. Load splits
-    expense.splits = db.scalars(
+    splits = db.scalars(
         select(ExpenseSplit).where(
             ExpenseSplit.expense_id == expense.id
         )
     ).all()
+
+    record_activity(
+        db=db,
+        trip_id=trip_id,
+        actor_user_id=current_user.id,
+        event_type="EXPENSE_CANCELLED",
+        entity_type="EXPENSE",
+        entity_id=expense.id,
+        message=f"{current_user.name} cancelled expense '{expense.description or expense.category}'",
+    )
+
+    notify_user_ids = {s.member_id for s in splits} | {trip.admin_id}
+    notify_user_ids.discard(current_user.id)
+    create_trip_notifications(
+        db=db,
+        user_ids=notify_user_ids,
+        trip_id=trip_id,
+        notification_type="EXPENSE_CANCELLED",
+        title="Expense Cancelled",
+        body=f"'{expense.description or expense.category}' in '{trip.name}' was cancelled.",
+        entity_type="EXPENSE",
+        entity_id=expense.id,
+    )
+
+    db.commit()
+    db.refresh(expense)
+
+    expense.splits = splits
 
     return expense
 
@@ -722,6 +773,29 @@ def update_expense(
         )
 
         db.add(transaction)
+
+    record_activity(
+        db=db,
+        trip_id=trip_id,
+        actor_user_id=current_user.id,
+        event_type="EXPENSE_UPDATED",
+        entity_type="EXPENSE",
+        entity_id=expense.id,
+        message=f"{current_user.name} updated expense '{expense.description or expense.category}'",
+    )
+
+    notify_user_ids = set(new_splits.keys()) | {trip.admin_id}
+    notify_user_ids.discard(current_user.id)
+    create_trip_notifications(
+        db=db,
+        user_ids=notify_user_ids,
+        trip_id=trip_id,
+        notification_type="EXPENSE_UPDATED",
+        title="Expense Updated",
+        body=f"'{expense.description or expense.category}' in '{trip.name}' was updated.",
+        entity_type="EXPENSE",
+        entity_id=expense.id,
+    )
 
     db.commit()
     db.refresh(expense)

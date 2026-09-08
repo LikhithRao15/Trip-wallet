@@ -17,6 +17,10 @@ from app.models.contribution import Contribution
 from app.models.expense import Expense
 from app.models.expense_split import ExpenseSplit
 from app.services.idempotency import create_request_hash
+from app.services.activity_service import (
+    record_activity,
+    create_trip_notifications,
+)
 from app.schemas.wallet import (
     ContributionCreate,
     ContributionUpdate,
@@ -151,7 +155,7 @@ def add_contribution(
         "note": data.note,
     })
     # Only admin can record contributions
-    get_trip_admin(
+    trip = get_trip_admin(
         trip_id,
         current_user,
         db,
@@ -235,6 +239,36 @@ def add_contribution(
 
         # Increase wallet
         wallet.balance_paise += data.amount_paise
+
+        contrib_user = db.scalar(select(User).where(User.id == member.user_id))
+        c_name = contrib_user.name if contrib_user else "Member"
+
+        record_activity(
+            db=db,
+            trip_id=trip_id,
+            actor_user_id=current_user.id,
+            event_type="CONTRIBUTION_ADDED",
+            entity_type="CONTRIBUTION",
+            entity_id=contribution.id,
+            message=f"{c_name} contributed ₹{data.amount_paise / 100:.2f} ({data.payment_method})",
+        )
+
+        notify_users = set()
+        if member.user_id != current_user.id:
+            notify_users.add(member.user_id)
+        if trip.admin_id != current_user.id:
+            notify_users.add(trip.admin_id)
+
+        create_trip_notifications(
+            db=db,
+            user_ids=notify_users,
+            trip_id=trip_id,
+            notification_type="CONTRIBUTION_ADDED",
+            title="Contribution Recorded",
+            body=f"₹{data.amount_paise / 100:.2f} contribution recorded for {c_name} in '{trip.name}'.",
+            entity_type="CONTRIBUTION",
+            entity_id=contribution.id,
+        )
 
         db.commit()
         db.refresh(contribution)
@@ -613,7 +647,7 @@ def update_contribution(
     db: Session = Depends(get_db),
 ):
     # Admin + active-trip check
-    get_trip_admin(
+    trip = get_trip_admin(
         trip_id,
         current_user,
         db,
@@ -697,6 +731,30 @@ def update_contribution(
         )
 
         db.add(transaction)
+
+    contrib_user = db.scalar(select(User).where(User.id == contribution.member_id))
+    c_name = contrib_user.name if contrib_user else "Member"
+    record_activity(
+        db=db,
+        trip_id=trip_id,
+        actor_user_id=current_user.id,
+        event_type="CONTRIBUTION_UPDATED",
+        entity_type="CONTRIBUTION",
+        entity_id=contribution.id,
+        message=f"Contribution for {c_name} updated to ₹{new_amount / 100:.2f}",
+    )
+
+    if contribution.member_id != current_user.id:
+        create_trip_notifications(
+            db=db,
+            user_ids=[contribution.member_id],
+            trip_id=trip_id,
+            notification_type="CONTRIBUTION_UPDATED",
+            title="Contribution Updated",
+            body=f"Your contribution in '{trip.name}' was updated to ₹{new_amount / 100:.2f}.",
+            entity_type="CONTRIBUTION",
+            entity_id=contribution.id,
+        )
 
     db.commit()
     db.refresh(contribution)

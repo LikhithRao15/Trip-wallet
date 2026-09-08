@@ -25,6 +25,11 @@ from app.services.settlement import (
     calculate_transfers,
     calculate_wallet_refunds,
 )
+from app.services.activity_service import (
+    record_activity,
+    create_trip_notifications,
+    get_trip_active_member_user_ids,
+)
 
 router = APIRouter(
     prefix="/trips/{trip_id}",
@@ -305,6 +310,31 @@ def complete_settlement(
         return build_settlement_result(trip, wallet, members, db)
 
     trip.settlement_status = "SETTLED"
+
+    record_activity(
+        db=db,
+        trip_id=trip_id,
+        actor_user_id=current_user.id,
+        event_type="SETTLEMENT_COMPLETED",
+        entity_type="SETTLEMENT",
+        entity_id=trip.id,
+        message=f"{current_user.name} finalized settlement for '{trip.name}'",
+    )
+
+    active_user_ids = get_trip_active_member_user_ids(
+        db, trip.id, exclude_user_id=current_user.id
+    )
+    create_trip_notifications(
+        db=db,
+        user_ids=active_user_ids,
+        trip_id=trip.id,
+        notification_type="SETTLEMENT_COMPLETED",
+        title="Settlement Finalized",
+        body=f"Final settlement has been completed for '{trip.name}'. All transactions are now locked.",
+        entity_type="SETTLEMENT",
+        entity_id=trip.id,
+    )
+
     db.commit()
     db.refresh(trip)
 

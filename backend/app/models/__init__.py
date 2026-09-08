@@ -6,3 +6,5 @@ from app.models.wallet_transaction import WalletTransaction
 from app.models.contribution import Contribution
 from app.models.expense import Expense
 from app.models.expense_split import ExpenseSplit
+from app.models.trip_activity import TripActivity
+from app.models.notification import Notification

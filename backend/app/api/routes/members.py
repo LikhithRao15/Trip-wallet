@@ -10,6 +10,10 @@ from app.models.trip import Trip
 from app.models.trip_member import TripMember
 from app.models.user import User
 from app.schemas.member import AddMemberRequest, MemberResponse
+from app.services.activity_service import (
+    record_activity,
+    create_notification,
+)
 
 
 router = APIRouter(
@@ -64,7 +68,7 @@ def add_member(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    require_admin(trip_id, current_user, db)
+    trip = require_admin(trip_id, current_user, db)
 
     user = db.scalar(
         select(User).where(User.email == data.email)
@@ -86,6 +90,27 @@ def add_member(
     if existing_member:
         if existing_member.status == "INACTIVE":
             existing_member.status = "ACTIVE"
+
+            record_activity(
+                db=db,
+                trip_id=trip_id,
+                actor_user_id=current_user.id,
+                event_type="MEMBER_REACTIVATED",
+                entity_type="MEMBER",
+                entity_id=existing_member.id,
+                message=f"{user.name} was reactivated in the trip",
+            )
+            create_notification(
+                db=db,
+                user_id=user.id,
+                trip_id=trip_id,
+                notification_type="MEMBER_ADDED",
+                title="Membership Reactivated",
+                body=f"Your membership in '{trip.name}' has been reactivated.",
+                entity_type="MEMBER",
+                entity_id=existing_member.id,
+            )
+
             db.commit()
             db.refresh(existing_member)
             return {
@@ -111,6 +136,28 @@ def add_member(
     )
 
     db.add(member)
+    db.flush()
+
+    record_activity(
+        db=db,
+        trip_id=trip_id,
+        actor_user_id=current_user.id,
+        event_type="MEMBER_ADDED",
+        entity_type="MEMBER",
+        entity_id=member.id,
+        message=f"{user.name} joined the trip",
+    )
+    create_notification(
+        db=db,
+        user_id=user.id,
+        trip_id=trip_id,
+        notification_type="MEMBER_ADDED",
+        title="Added to Trip",
+        body=f"You were added to '{trip.name}' by {current_user.name}.",
+        entity_type="MEMBER",
+        entity_id=member.id,
+    )
+
     db.commit()
     db.refresh(member)
 
@@ -224,6 +271,29 @@ def remove_member(
         )
 
     member.status = "INACTIVE"
+
+    removed_user = db.scalar(select(User).where(User.id == member.user_id))
+    r_name = removed_user.name if removed_user else "Member"
+
+    record_activity(
+        db=db,
+        trip_id=trip_id,
+        actor_user_id=current_user.id,
+        event_type="MEMBER_REMOVED",
+        entity_type="MEMBER",
+        entity_id=member.id,
+        message=f"{r_name} was removed from the trip",
+    )
+    create_notification(
+        db=db,
+        user_id=member.user_id,
+        trip_id=trip_id,
+        notification_type="MEMBER_REMOVED",
+        title="Removed from Trip",
+        body=f"You have been removed from '{trip.name}'.",
+        entity_type="MEMBER",
+        entity_id=member.id,
+    )
 
     db.commit()
 

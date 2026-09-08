@@ -12,6 +12,8 @@ from app.api.routes.expenses import router as expenses_router
 from app.api.routes.settlement import router as settlement_router
 from app.api.routes.statistics import router as statistics_router
 from app.api.routes.reports import router as reports_router
+from app.api.routes.notifications import router as notifications_router
+from app.api.routes.activity import router as activity_router
 
 app = FastAPI(
     title="Trip Wallet API",
@@ -33,6 +35,8 @@ app.include_router(expenses_router)
 app.include_router(settlement_router)
 app.include_router(statistics_router)
 app.include_router(reports_router)
+app.include_router(notifications_router)
+app.include_router(activity_router)
 
 @app.get("/")
 def root():

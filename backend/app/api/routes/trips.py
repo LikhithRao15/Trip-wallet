@@ -12,6 +12,11 @@ from app.models.wallet import Wallet
 from app.models.user import User
 from app.schemas.trip import TripCreate, TripResponse
 from app.services.financial_integrity import verify_wallet_balance
+from app.services.activity_service import (
+    record_activity,
+    create_trip_notifications,
+    get_trip_active_member_user_ids,
+)
 
 
 router = APIRouter(
@@ -61,6 +66,16 @@ def create_trip(
     )
 
     db.add(wallet)
+
+    record_activity(
+        db=db,
+        trip_id=trip.id,
+        actor_user_id=current_user.id,
+        event_type="TRIP_CREATED",
+        entity_type="TRIP",
+        entity_id=trip.id,
+        message=f"{current_user.name} created trip '{trip.name}'",
+    )
 
     db.commit()
     db.refresh(trip)
@@ -190,6 +205,30 @@ def close_trip(
     # Close both entities atomically.
     trip.status = "CLOSED"
     wallet.status = "CLOSED"
+
+    record_activity(
+        db=db,
+        trip_id=trip.id,
+        actor_user_id=current_user.id,
+        event_type="TRIP_CLOSED",
+        entity_type="TRIP",
+        entity_id=trip.id,
+        message=f"{current_user.name} closed trip '{trip.name}'",
+    )
+
+    active_member_ids = get_trip_active_member_user_ids(
+        db, trip.id, exclude_user_id=current_user.id
+    )
+    create_trip_notifications(
+        db=db,
+        user_ids=active_member_ids,
+        trip_id=trip.id,
+        notification_type="TRIP_CLOSED",
+        title="Trip Closed",
+        body=f"'{trip.name}' has been closed by {current_user.name}.",
+        entity_type="TRIP",
+        entity_id=trip.id,
+    )
 
     try:
         db.commit()

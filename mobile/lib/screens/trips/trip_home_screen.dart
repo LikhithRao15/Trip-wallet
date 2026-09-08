@@ -4,7 +4,9 @@ import '../../models/trip.dart';
 import 'trip_details_screen.dart';
 import '../../services/trip_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/notification_service.dart';
 import '../auth/login_screen.dart';
+import '../notifications/notification_screen.dart';
 import 'create_trip_screen.dart';
 
 class TripHomeScreen extends StatefulWidget {
@@ -17,15 +19,29 @@ class TripHomeScreen extends StatefulWidget {
 class _TripHomeScreenState extends State<TripHomeScreen> {
   final TripService _tripService = TripService();
   final AuthService _authService = AuthService();
+  final NotificationService _notificationService = NotificationService();
 
   List<Trip> _trips = [];
   bool _isLoading = true;
   String? _error;
+  int _unreadNotificationsCount = 0;
 
   @override
   void initState() {
     super.initState();
     _loadTrips();
+    _loadUnreadCount();
+  }
+
+  Future<void> _loadUnreadCount() async {
+    try {
+      final count = await _notificationService.getUnreadCount();
+      if (mounted) {
+        setState(() {
+          _unreadNotificationsCount = count;
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _logout() async {
@@ -66,6 +82,7 @@ class _TripHomeScreenState extends State<TripHomeScreen> {
       _error = null;
     });
 
+    _loadUnreadCount();
     try {
       final trips = await _tripService.getTrips();
 
@@ -91,6 +108,51 @@ class _TripHomeScreenState extends State<TripHomeScreen> {
       appBar: AppBar(
         title: const Text('My Trips'),
         actions: [
+          IconButton(
+            tooltip: 'Notifications',
+            icon: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                const Icon(Icons.notifications_outlined),
+                if (_unreadNotificationsCount > 0)
+                  Positioned(
+                    right: -2,
+                    top: -2,
+                    child: Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 16,
+                        minHeight: 16,
+                      ),
+                      child: Text(
+                        _unreadNotificationsCount > 99
+                            ? '99+'
+                            : '$_unreadNotificationsCount',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const NotificationScreen(),
+                ),
+              );
+              _loadUnreadCount();
+            },
+          ),
           IconButton(
             onPressed: _loadTrips,
             icon: const Icon(Icons.refresh),

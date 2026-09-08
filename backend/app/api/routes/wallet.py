@@ -63,6 +63,12 @@ def get_trip_admin(
             detail="Cannot modify the wallet of a closed trip",
         )
 
+    if getattr(trip, "settlement_status", "OPEN") == "SETTLED":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot modify the wallet of a settled trip",
+        )
+
     return trip
 
 
@@ -581,11 +587,15 @@ def get_member_financial_summary(
         result.append(
             MemberFinancialSummary(
                 member_id=member.user_id,
+                user_id=member.user_id,
                 name=user.name,
                 email=user.email,
                 contributed_paise=contributed,
                 spent_paise=spent,
                 net_paise=net,
+                total_contributed_paise=contributed,
+                total_expense_share_paise=spent,
+                net_position_paise=net,
             )
         )
 

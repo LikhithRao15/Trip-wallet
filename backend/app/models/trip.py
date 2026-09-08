@@ -59,6 +59,13 @@ class Trip(Base):
         nullable=False,
     )
 
+    settlement_status: Mapped[str] = mapped_column(
+        String(20),
+        default="OPEN",
+        server_default="OPEN",
+        nullable=False,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,

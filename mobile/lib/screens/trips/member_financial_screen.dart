@@ -114,16 +114,66 @@ class _MemberFinancialScreenState
     }
 
     if (_members.isEmpty) {
-      return const Center(
-        child: Text('No member financial data'),
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.people_outline, size: 48, color: Colors.grey),
+              const SizedBox(height: 16),
+              const Text('No member financial data found'),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: _loadSummary,
+                child: const Text('Refresh'),
+              ),
+            ],
+          ),
+        ),
       );
     }
+
+    final totalContributed = _members.fold<int>(0, (sum, m) => sum + m.contributedPaise);
+    final totalSpent = _members.fold<int>(0, (sum, m) => sum + m.spentPaise);
+    final walletBalance = totalContributed - totalSpent;
 
     return RefreshIndicator(
       onRefresh: _loadSummary,
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          // Totals Header Card
+          Card(
+            elevation: 2,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Trip Financial Overview',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _value('Total Contributions', _money(totalContributed)),
+                      _value('Total Expenses', _money(totalSpent)),
+                      _value(
+                        'Wallet Balance',
+                        _money(walletBalance),
+                        valueColor: walletBalance > 0 ? Colors.blue.shade700 : null,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
           Card(
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
             child: const Padding(
@@ -134,7 +184,8 @@ class _MemberFinancialScreenState
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Expense Share is the member\'s allocated share of common-wallet expenses. Net = Contributed − Expense Share.',
+                      'Expense Share is the member\'s allocated share of trip expenses.\n'
+                      'Net Position = Total Contributed − Expense Share.',
                       style: TextStyle(fontSize: 12),
                     ),
                   ),
@@ -161,10 +212,10 @@ class _MemberFinancialScreenState
     final Color statusColor;
 
     if (receive) {
-      status = 'Should Receive';
+      status = 'Gets Back';
       statusColor = Colors.green;
     } else if (pay) {
-      status = 'Should Pay';
+      status = 'Owes';
       statusColor = Colors.red;
     } else {
       status = 'Settled';
@@ -222,11 +273,19 @@ class _MemberFinancialScreenState
                     ],
                   ),
                 ),
-                Text(
-                  status,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: statusColor,
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    status,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: statusColor,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
               ],
@@ -246,7 +305,7 @@ class _MemberFinancialScreenState
                   _money(member.spentPaise),
                 ),
                 _value(
-                  'Net',
+                  'Net Position',
                   netDisplay,
                   valueColor: netColor,
                 ),

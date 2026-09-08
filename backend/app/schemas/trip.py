@@ -23,6 +23,7 @@ class TripResponse(BaseModel):
     currency: str
     admin_id: UUID
     status: str
+    settlement_status: str = "OPEN"
 
     model_config = {
         "from_attributes": True

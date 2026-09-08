@@ -18,13 +18,17 @@ class MemberFinancialSummary {
   factory MemberFinancialSummary.fromJson(
     Map<String, dynamic> json,
   ) {
+    final cPaise = json['total_contributed_paise'] ?? json['contributed_paise'] ?? 0;
+    final sPaise = json['total_expense_share_paise'] ?? json['spent_paise'] ?? 0;
+    final nPaise = json['net_position_paise'] ?? json['net_paise'] ?? 0;
+
     return MemberFinancialSummary(
-      memberId: json['member_id']?.toString() ?? '',
+      memberId: json['user_id']?.toString() ?? json['member_id']?.toString() ?? '',
       name: json['name']?.toString() ?? '',
       email: json['email']?.toString() ?? '',
-      contributedPaise: json['contributed_paise'] ?? 0,
-      spentPaise: json['spent_paise'] ?? 0,
-      netPaise: json['net_paise'] ?? 0,
+      contributedPaise: cPaise,
+      spentPaise: sPaise,
+      netPaise: nPaise,
     );
   }
 }

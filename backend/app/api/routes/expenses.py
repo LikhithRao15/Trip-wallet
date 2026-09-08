@@ -135,6 +135,12 @@ def create_expense(
             detail="Cannot create expense for a closed trip",
         )
 
+    if getattr(trip, "settlement_status", "OPEN") == "SETTLED":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot create expense for a settled trip",
+        )
+
     # Check if this expense request was already processed
     existing_expense = db.scalar(
         select(Expense).where(
@@ -473,6 +479,12 @@ def cancel_expense(
             detail="Cannot cancel an expense from a closed trip",
         )
 
+    if getattr(trip, "settlement_status", "OPEN") == "SETTLED":
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot cancel an expense from a settled trip",
+        )
+
     # 4. Lock the expense
     expense = db.scalar(
         select(Expense)
@@ -580,6 +592,12 @@ def update_expense(
         raise HTTPException(
             status_code=400,
             detail="Cannot edit an expense from a closed trip",
+        )
+
+    if getattr(trip, "settlement_status", "OPEN") == "SETTLED":
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot edit an expense from a settled trip",
         )
 
     # 4. Lock expense

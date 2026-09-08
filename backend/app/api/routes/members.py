@@ -44,6 +44,12 @@ def require_admin(
             detail="Cannot add members to a closed trip",
         )
 
+    if getattr(trip, "settlement_status", "OPEN") == "SETTLED":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot modify members of a settled trip",
+        )
+
     return trip
 
 

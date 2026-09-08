@@ -4,18 +4,22 @@ from uuid import UUID
 def calculate_settlement(
     contributions: dict[UUID, int],
     spent: dict[UUID, int],
+    active_member_ids: set[UUID] | list[UUID] | None = None,
 ) -> dict[UUID, int]:
     """
     Calculate each member's net spending position.
 
-    Positive = member contributed more than their expense share.
-    Negative = member's expense share is greater than their contribution.
+    Positive = member contributed more than their expense share (CREDITOR).
+    Negative = member's expense share is greater than their contribution (DEBTOR).
+    Zero = member is fully settled.
     """
     member_ids = set(contributions) | set(spent)
+    if active_member_ids:
+        member_ids |= set(active_member_ids)
 
     settlement = {}
 
-    for member_id in member_ids:
+    for member_id in sorted(member_ids, key=lambda x: str(x)):
         contributed = contributions.get(member_id, 0)
         consumed = spent.get(member_id, 0)
 
@@ -56,7 +60,7 @@ def calculate_wallet_refunds(
     refunds = {}
     allocated = 0
 
-    members = list(contributions.keys())
+    members = sorted(contributions.keys(), key=lambda x: str(x))
 
     for index, member_id in enumerate(members):
         contributed = contributions[member_id]
@@ -77,6 +81,10 @@ def calculate_wallet_refunds(
 def calculate_transfers(
     settlement: dict[UUID, int],
 ) -> list[dict]:
+    """
+    Generate deterministic peer-to-peer settlement transfers from debtors to creditors.
+    Requires sum(settlement.values()) == 0.
+    """
     creditors = []
     debtors = []
 
@@ -86,21 +94,27 @@ def calculate_transfers(
                 "member_id": member_id,
                 "amount_paise": amount,
             })
-
         elif amount < 0:
             debtors.append({
                 "member_id": member_id,
                 "amount_paise": -amount,
             })
 
-    creditors.sort(
-        key=lambda x: x["amount_paise"],
-        reverse=True,
-    )
+    total_creditor_paise = sum(c["amount_paise"] for c in creditors)
+    total_debtor_paise = sum(d["amount_paise"] for d in debtors)
 
+    if total_creditor_paise != total_debtor_paise:
+        raise ValueError(
+            f"Settlement is not balanced: total creditors ({total_creditor_paise} paise) "
+            f"does not equal total debtors ({total_debtor_paise} paise)"
+        )
+
+    # Sort largest amount first; break ties deterministically with UUID string
+    creditors.sort(
+        key=lambda x: (-x["amount_paise"], str(x["member_id"])),
+    )
     debtors.sort(
-        key=lambda x: x["amount_paise"],
-        reverse=True,
+        key=lambda x: (-x["amount_paise"], str(x["member_id"])),
     )
 
     transfers = []

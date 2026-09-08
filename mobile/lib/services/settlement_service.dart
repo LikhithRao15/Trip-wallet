@@ -31,4 +31,20 @@ class SettlementService {
       Map<String, dynamic>.from(response),
     );
   }
+
+  Future<SettlementResult> completeSettlement(
+    String tripId,
+  ) async {
+    final token = await _getToken();
+
+    final response = await _apiClient.post(
+      '${ApiConstants.trips}/$tripId/settlement/complete',
+      {},
+      token: token,
+    );
+
+    return SettlementResult.fromJson(
+      Map<String, dynamic>.from(response),
+    );
+  }
 }

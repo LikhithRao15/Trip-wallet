@@ -62,8 +62,22 @@ class WalletSummaryResponse(BaseModel):
 
 class MemberFinancialSummary(BaseModel):
     member_id: UUID
+    user_id: UUID | None = None
     name: str
     email: EmailStr
     contributed_paise: int
     spent_paise: int
     net_paise: int
+    total_contributed_paise: int | None = None
+    total_expense_share_paise: int | None = None
+    net_position_paise: int | None = None
+
+    def model_post_init(self, __context):
+        if self.user_id is None:
+            self.user_id = self.member_id
+        if self.total_contributed_paise is None:
+            self.total_contributed_paise = self.contributed_paise
+        if self.total_expense_share_paise is None:
+            self.total_expense_share_paise = self.spent_paise
+        if self.net_position_paise is None:
+            self.net_position_paise = self.net_paise

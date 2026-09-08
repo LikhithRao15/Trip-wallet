@@ -8,6 +8,7 @@ class Trip {
   final String currency;
   final String adminId;
   final String status;
+  final String settlementStatus;
 
   Trip({
     required this.id,
@@ -19,6 +20,7 @@ class Trip {
     required this.currency,
     required this.adminId,
     required this.status,
+    this.settlementStatus = 'OPEN',
   });
 
   factory Trip.fromJson(Map<String, dynamic> json) {
@@ -32,6 +34,7 @@ class Trip {
       currency: json['currency'] ?? 'INR',
       adminId: json['admin_id'],
       status: json['status'] ?? 'ACTIVE',
+      settlementStatus: json['settlement_status'] ?? 'OPEN',
     );
   }
 }

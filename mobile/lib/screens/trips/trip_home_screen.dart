@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 
+import '../../data/local/app_database.dart';
+import '../../data/repositories/trip_repository.dart';
 import '../../models/trip.dart';
-import 'trip_details_screen.dart';
-import '../../services/trip_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/notification_service.dart';
+import '../../widgets/sync_status_badge.dart';
 import '../auth/login_screen.dart';
 import '../notifications/notification_screen.dart';
 import 'create_trip_screen.dart';
+import 'trip_details_screen.dart';
 
 class TripHomeScreen extends StatefulWidget {
   const TripHomeScreen({super.key});
@@ -17,7 +19,7 @@ class TripHomeScreen extends StatefulWidget {
 }
 
 class _TripHomeScreenState extends State<TripHomeScreen> {
-  final TripService _tripService = TripService();
+  final TripRepository _tripRepository = TripRepository.instance;
   final AuthService _authService = AuthService();
   final NotificationService _notificationService = NotificationService();
 
@@ -65,6 +67,13 @@ class _TripHomeScreenState extends State<TripHomeScreen> {
 
     if (confirm != true) return;
 
+    try {
+      final currentUser = await _authService.getCurrentUser();
+      if (currentUser != null && currentUser['id'] != null) {
+        await AppDatabase.instance.clearUserCache(currentUser['id'].toString());
+      }
+    } catch (_) {}
+
     await _authService.logout();
 
     if (!mounted) return;
@@ -84,7 +93,7 @@ class _TripHomeScreenState extends State<TripHomeScreen> {
 
     _loadUnreadCount();
     try {
-      final trips = await _tripService.getTrips();
+      final trips = await _tripRepository.getTrips();
 
       if (!mounted) return;
 
@@ -223,12 +232,24 @@ class _TripHomeScreenState extends State<TripHomeScreen> {
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: _loadTrips,
-      child: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: _trips.length,
-        itemBuilder: (context, index) {
+    return Column(
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              SyncStatusBadge(),
+            ],
+          ),
+        ),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _loadTrips,
+            child: ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _trips.length,
+              itemBuilder: (context, index) {
           final trip = _trips[index];
 
           return Card(
@@ -269,6 +290,10 @@ class _TripHomeScreenState extends State<TripHomeScreen> {
           );
         },
       ),
-    );
+    ),
+  ),
+],
+);
   }
 }
+

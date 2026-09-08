@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../core/network/network_info.dart';
+import '../../data/repositories/trip_repository.dart';
 import '../../models/notification.dart';
 import '../../services/notification_service.dart';
 
@@ -11,6 +13,7 @@ class NotificationScreen extends StatefulWidget {
 
 class _NotificationScreenState extends State<NotificationScreen> {
   final NotificationService _notificationService = NotificationService();
+  final TripRepository _repository = TripRepository.instance;
   List<AppNotification> _notifications = [];
   bool _isLoading = true;
   bool _unreadOnly = false;
@@ -40,10 +43,16 @@ class _NotificationScreenState extends State<NotificationScreen> {
         });
       }
     } catch (e) {
+      final cached = await _repository.getNotifications();
       if (mounted) {
         setState(() {
-          _errorMessage = e.toString();
+          _notifications = _unreadOnly
+              ? cached.where((n) => !n.isRead).toList()
+              : cached;
           _isLoading = false;
+          if (_notifications.isEmpty) {
+            _errorMessage = 'Offline • Connect to internet to load notifications';
+          }
         });
       }
     }
@@ -51,6 +60,20 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
   Future<void> _markAsRead(AppNotification notif) async {
     if (notif.isRead) return;
+
+    final isOnline = await NetworkInfo.instance.isConnected;
+    if (!isOnline) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Internet connection required to update notification state.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
     try {
       await _notificationService.markAsRead(notif.id);
       setState(() {
@@ -81,6 +104,19 @@ class _NotificationScreenState extends State<NotificationScreen> {
   }
 
   Future<void> _markAllAsRead() async {
+    final isOnline = await NetworkInfo.instance.isConnected;
+    if (!isOnline) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Internet connection required to update notification state.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
     try {
       final count = await _notificationService.markAllAsRead();
       setState(() {

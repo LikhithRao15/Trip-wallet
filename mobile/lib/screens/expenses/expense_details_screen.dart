@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/network/network_info.dart';
 import '../../models/expense.dart';
 import '../../models/trip.dart';
 import 'edit_expense_screen.dart';
@@ -72,6 +73,18 @@ class _ExpenseDetailsScreenState
 }
 
   Future<void> _cancelExpense() async {
+    final isOnline = await NetworkInfo.instance.isConnected;
+    if (!mounted) return;
+    if (!isOnline) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Internet connection required for this operation.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
@@ -124,6 +137,18 @@ class _ExpenseDetailsScreenState
 }
  
   Future<void> _editExpense() async {
+    final isOnline = await NetworkInfo.instance.isConnected;
+    if (!mounted) return;
+    if (!isOnline) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Internet connection required for this operation.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
   final expense = _expense;
 
   if (expense == null) return;

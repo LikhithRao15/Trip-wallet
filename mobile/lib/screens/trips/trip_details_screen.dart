@@ -7,11 +7,6 @@ import '../../models/trip.dart';
 import '../../models/trip_member.dart';
 import '../../models/wallet_summary.dart';
 import '../../services/auth_service.dart';
-import '../../services/contribution_service.dart';
-import '../../services/expense_service.dart';
-import '../../services/members_service.dart';
-import '../../services/trip_service.dart';
-import '../../services/wallet_service.dart';
 import '../expenses/expense_details_screen.dart';
 import '../expenses/expense_history_screen.dart';
 import '../expenses/pay_expense_screen.dart';
@@ -19,6 +14,9 @@ import '../settlement/settlement_screen.dart';
 import '../wallet/contribution_history_screen.dart';
 import '../wallet/wallet_screen.dart';
 import 'close_trip_screen.dart';
+import '../../core/network/network_info.dart';
+import '../../data/repositories/trip_repository.dart';
+import '../../widgets/sync_status_badge.dart';
 import 'member_financial_screen.dart';
 import 'members_screen.dart';
 import 'statistics_screen.dart';
@@ -35,12 +33,7 @@ class TripDetailsScreen extends StatefulWidget {
 
 class _TripDetailsScreenState extends State<TripDetailsScreen> {
   late Trip _trip;
-  final WalletService _walletService = WalletService();
-  final MemberService _memberService = MemberService();
-  final ExpenseService _expenseService = ExpenseService();
-  final ContributionService _contributionService = ContributionService();
   final AuthService _authService = AuthService();
-  final TripService _tripService = TripService();
 
   WalletSummary? _walletSummary;
   int? _memberCount;
@@ -67,25 +60,18 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     });
 
     try {
+      final repo = TripRepository.instance;
       final tripFuture =
-          _tripService.getTrip(_trip.id).catchError((_) => _trip);
-      final walletFuture = _walletService
-          .getWalletSummary(_trip.id)
-          .then<WalletSummary?>((w) => w)
-          .catchError((_) => null);
-      final membersFuture = _memberService
-          .getMembers(_trip.id)
-          .then<List<TripMember>>((m) => m)
-          .catchError((_) => <TripMember>[]);
-      final expensesFuture = _expenseService
-          .getExpenses(_trip.id)
-          .then<List<Expense>>((e) => e)
-          .catchError((_) => <Expense>[]);
-      final contributionsFuture = _contributionService
-          .getContributions(_trip.id)
-          .then<List<Contribution>>((c) => c)
-          .catchError((_) => <Contribution>[]);
-      final userFuture = _authService.getMe().catchError((_) => null);
+          repo.getTrip(_trip.id).then((t) => t ?? _trip).catchError((_) => _trip);
+      final walletFuture =
+          repo.getWallet(_trip.id).catchError((_) => null);
+      final membersFuture =
+          repo.getMembers(_trip.id).catchError((_) => <TripMember>[]);
+      final expensesFuture =
+          repo.getExpenses(_trip.id).catchError((_) => <Expense>[]);
+      final contributionsFuture =
+          repo.getContributions(_trip.id).catchError((_) => <Contribution>[]);
+      final userFuture = _authService.getCurrentUser().catchError((_) => null);
 
       final results = await Future.wait([
         tripFuture,
@@ -212,6 +198,13 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          const Align(
+            alignment: Alignment.centerRight,
+            child: Padding(
+              padding: EdgeInsets.only(bottom: 8.0),
+              child: SyncStatusBadge(),
+            ),
+          ),
           _buildTripHeader(),
           const SizedBox(height: 16),
           _buildMetricsGrid(),
@@ -410,6 +403,17 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
               title: 'Close Trip',
               subtitle: 'Finalise the trip and lock financial changes',
               onTap: () async {
+                final isOnline = await NetworkInfo.instance.isConnected;
+                if (!mounted) return;
+                if (!isOnline) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Internet connection required for this operation.'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  return;
+                }
                 final result = await Navigator.push(
                   context,
                   MaterialPageRoute(

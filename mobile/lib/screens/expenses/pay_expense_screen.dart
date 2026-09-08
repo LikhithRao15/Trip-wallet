@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/constants/expense_categories.dart';
+import '../../core/network/network_info.dart';
 import '../../models/trip.dart';
 import '../../models/trip_member.dart';
 import '../../services/expense_service.dart';
@@ -212,6 +213,18 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
   }
 
   Future<void> _submit() async {
+    final isOnline = await NetworkInfo.instance.isConnected;
+    if (!mounted) return;
+    if (!isOnline) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Internet connection required for this operation.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     if (!_formKey.currentState!.validate()) {
       return;
     }

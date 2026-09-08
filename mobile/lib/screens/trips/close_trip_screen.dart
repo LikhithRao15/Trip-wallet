@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/network/network_info.dart';
 import '../../models/trip.dart';
 import '../../services/close_trip_service.dart';
 import '../settlement/settlement_screen.dart';
@@ -22,6 +23,19 @@ class _CloseTripScreenState extends State<CloseTripScreen> {
   bool _isClosing = false;
 
   Future<void> _closeTrip() async {
+    final isOnline = await NetworkInfo.instance.isConnected;
+    if (!isOnline) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Internet connection required for this operation.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
     setState(() {
       _isClosing = true;
     });

@@ -46,6 +46,10 @@ class AuthService {
     return await _tokenStorage.getToken();
   }
 
+  Future<Map<String, dynamic>?> getCurrentUser() async {
+    return await getMe();
+  }
+
   Future<Map<String, dynamic>?> getMe() async {
     final token = await _tokenStorage.getToken();
     if (token == null) return null;
@@ -55,19 +59,26 @@ class AuthService {
         ApiConstants.me,
         token: token,
       );
-      return Map<String, dynamic>.from(response);
-    } catch (_) {
-      await _tokenStorage.clearToken();
-      return null;
+      final profile = Map<String, dynamic>.from(response);
+      await _tokenStorage.saveUser(profile);
+      return profile;
+    } catch (e) {
+      if (e.toString().contains('401')) {
+        await _tokenStorage.clearToken();
+        return null;
+      }
+      return await _tokenStorage.getUser();
     }
   }
 
   Future<bool> hasValidSession() async {
+    final token = await _tokenStorage.getToken();
+    if (token == null) return false;
     final user = await getMe();
     return user != null;
   }
 
   Future<void> logout() async {
-    await _tokenStorage.clearToken();
+    await _tokenStorage.clearAll();
   }
 }

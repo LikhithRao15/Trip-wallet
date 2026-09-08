@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/network/network_info.dart';
 import '../../models/trip.dart';
 import '../../models/settlement.dart';
 import '../../services/auth_service.dart';
@@ -61,6 +62,18 @@ class _SettlementScreenState extends State<SettlementScreen> {
   }
 
   Future<void> _confirmCompleteSettlement() async {
+    final isOnline = await NetworkInfo.instance.isConnected;
+    if (!mounted) return;
+    if (!isOnline) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Internet connection required for this operation.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(

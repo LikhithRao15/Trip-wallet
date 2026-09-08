@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../data/repositories/trip_repository.dart';
 import '../../models/activity.dart';
 import '../../services/activity_service.dart';
 
@@ -55,10 +56,14 @@ class _TripActivityScreenState extends State<TripActivityScreen> {
         });
       }
     } catch (e) {
+      final cached = await TripRepository.instance.getActivities(widget.tripId);
       if (mounted) {
         setState(() {
-          _errorMessage = e.toString();
+          _activities = cached;
           _isLoading = false;
+          if (_activities.isEmpty) {
+            _errorMessage = 'Offline • Connect to internet to view activities';
+          }
         });
       }
     }

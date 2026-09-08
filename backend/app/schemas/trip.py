@@ -1,7 +1,7 @@
 from datetime import date
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class TripCreate(BaseModel):
@@ -11,6 +11,14 @@ class TripCreate(BaseModel):
     start_date: date | None = None
     end_date: date | None = None
     currency: str = Field(default="INR", min_length=3, max_length=3)
+
+
+class TripUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=150)
+    description: str | None = None
+    destination: str | None = Field(default=None, max_length=150)
+    start_date: date | None = None
+    end_date: date | None = None
 
 
 class TripResponse(BaseModel):

@@ -24,6 +24,15 @@ class _WalletTransactionsScreenState
   List<WalletTransaction> _transactions = [];
   bool _loading = true;
   String? _error;
+  String _selectedType = 'ALL';
+  String _sortOrder = 'newest';
+
+  final List<String> _types = [
+    'ALL',
+    'CONTRIBUTION',
+    'EXPENSE',
+    'ADJUSTMENT',
+  ];
 
   @override
   void initState() {
@@ -38,13 +47,32 @@ class _WalletTransactionsScreenState
     });
 
     try {
-      final transactions =
-          await _walletService.getTransactions(widget.trip.id);
+      String? filterType;
+      if (_selectedType == 'CONTRIBUTION') {
+        filterType = 'CONTRIBUTION';
+      } else if (_selectedType == 'EXPENSE') {
+        filterType = 'EXPENSE';
+      }
+
+      final transactions = await _walletService.getTransactions(
+        widget.trip.id,
+        transactionType: filterType,
+        sort: _sortOrder,
+      );
 
       if (!mounted) return;
 
+      List<WalletTransaction> result = transactions;
+      if (_selectedType == 'ADJUSTMENT') {
+        result = transactions
+            .where((t) =>
+                t.transactionType.contains('ADJUSTMENT') ||
+                t.transactionType.contains('REVERSAL'))
+            .toList();
+      }
+
       setState(() {
-        _transactions = transactions;
+        _transactions = result;
         _loading = false;
       });
     } catch (e) {
@@ -114,8 +142,52 @@ class _WalletTransactionsScreenState
     return Scaffold(
       appBar: AppBar(
         title: const Text('Wallet Transactions'),
+        actions: [
+          IconButton(
+            icon: Icon(_sortOrder == 'newest'
+                ? Icons.arrow_downward_rounded
+                : Icons.arrow_upward_rounded),
+            tooltip: _sortOrder == 'newest' ? 'Newest first' : 'Oldest first',
+            onPressed: () {
+              setState(() {
+                _sortOrder = _sortOrder == 'newest' ? 'oldest' : 'newest';
+              });
+              _loadTransactions();
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loading ? null : _loadTransactions,
+          ),
+        ],
       ),
-      body: _buildBody(),
+      body: Column(
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: _types.map((type) {
+                final isSelected = _selectedType == type;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: FilterChip(
+                    label: Text(type),
+                    selected: isSelected,
+                    onSelected: (selected) {
+                      if (selected) {
+                        setState(() => _selectedType = type);
+                        _loadTransactions();
+                      }
+                    },
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          Expanded(child: _buildBody()),
+        ],
+      ),
     );
   }
 

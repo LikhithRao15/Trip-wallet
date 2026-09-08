@@ -42,4 +42,34 @@ class TripService {
 
     return Trip.fromJson(Map<String, dynamic>.from(response));
   }
+
+  Future<Trip> updateTrip(
+    String tripId, {
+    String? name,
+    String? destination,
+    String? description,
+    String? startDate,
+    String? endDate,
+  }) async {
+    final token = await _tokenStorage.getToken();
+
+    if (token == null) {
+      throw Exception('Please login again');
+    }
+
+    final body = <String, dynamic>{};
+    if (name != null) body['name'] = name;
+    if (destination != null) body['destination'] = destination;
+    if (description != null) body['description'] = description;
+    if (startDate != null) body['start_date'] = startDate;
+    if (endDate != null) body['end_date'] = endDate;
+
+    final response = await _apiClient.put(
+      '${ApiConstants.trips}/$tripId',
+      body,
+      token: token,
+    );
+
+    return Trip.fromJson(Map<String, dynamic>.from(response));
+  }
 }

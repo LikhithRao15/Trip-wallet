@@ -10,7 +10,7 @@ from app.models.trip import Trip
 from app.models.trip_member import TripMember
 from app.models.wallet import Wallet
 from app.models.user import User
-from app.schemas.trip import TripCreate, TripResponse
+from app.schemas.trip import TripCreate, TripResponse, TripUpdate
 from app.services.financial_integrity import verify_wallet_balance
 from app.services.activity_service import (
     record_activity,
@@ -137,6 +137,76 @@ def get_trip(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You are not a member of this trip",
             )
+
+    return trip
+
+
+@router.put(
+    "/{trip_id}",
+    response_model=TripResponse,
+)
+def update_trip(
+    trip_id: uuid.UUID,
+    data: TripUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    trip = db.scalar(select(Trip).where(Trip.id == trip_id))
+
+    if not trip:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Trip not found",
+        )
+
+    if trip.admin_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the trip admin can edit trip details",
+        )
+
+    if trip.status != "ACTIVE":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot modify details of a closed trip",
+        )
+
+    new_start_date = data.start_date if data.start_date is not None else trip.start_date
+    new_end_date = data.end_date if data.end_date is not None else trip.end_date
+
+    if (
+        new_start_date is not None
+        and new_end_date is not None
+        and new_start_date > new_end_date
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="start_date cannot be after end_date",
+        )
+
+    if data.name is not None and data.name.strip():
+        trip.name = data.name.strip()
+    if data.description is not None:
+        trip.description = data.description.strip() if data.description.strip() else None
+    if data.destination is not None:
+        trip.destination = data.destination.strip() if data.destination.strip() else None
+    if data.start_date is not None:
+        trip.start_date = data.start_date
+    if data.end_date is not None:
+        trip.end_date = data.end_date
+
+    record_activity(
+        db=db,
+        trip_id=trip.id,
+        actor_user_id=current_user.id,
+        event_type="TRIP_UPDATED",
+        entity_type="TRIP",
+        entity_id=trip.id,
+        message=f"{current_user.name} updated trip details",
+    )
+
+    db.commit()
+    db.refresh(trip)
 
     return trip
 

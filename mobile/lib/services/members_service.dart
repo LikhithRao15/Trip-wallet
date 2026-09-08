@@ -7,15 +7,31 @@ class MemberService {
   final ApiClient _apiClient = ApiClient();
   final TokenStorage _tokenStorage = TokenStorage.instance;
 
-  Future<List<TripMember>> getMembers(String tripId) async {
+  Future<List<TripMember>> getMembers(
+    String tripId, {
+    String? statusFilter,
+    String? search,
+  }) async {
     final token = await _tokenStorage.getToken();
 
     if (token == null) {
       throw Exception('Please login again');
     }
 
+    final queryParams = <String, String>{};
+    if (statusFilter != null && statusFilter.isNotEmpty) {
+      queryParams['status_filter'] = statusFilter;
+    }
+    if (search != null && search.trim().isNotEmpty) {
+      queryParams['search'] = search.trim();
+    }
+
+    final uri = Uri.parse('${ApiConstants.trips}/$tripId/members').replace(
+      queryParameters: queryParams.isNotEmpty ? queryParams : null,
+    );
+
     final response = await _apiClient.get(
-      '${ApiConstants.trips}/$tripId/members',
+      uri.toString(),
       token: token,
     );
 

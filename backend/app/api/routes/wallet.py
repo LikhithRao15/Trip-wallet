@@ -386,6 +386,10 @@ def get_contributions(
 )
 def get_wallet_transactions(
     trip_id: UUID,
+    transaction_type: str | None = None,
+    sort: str = "newest",
+    start_date: str | None = None,
+    end_date: str | None = None,
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     current_user: User = Depends(get_current_user),
@@ -430,17 +434,29 @@ def get_wallet_transactions(
             detail="Wallet not found",
         )
 
+    # Build query
+    query = select(WalletTransaction).where(
+        WalletTransaction.wallet_id == wallet.id
+    )
+
+    if transaction_type and transaction_type.strip():
+        query = query.where(
+            WalletTransaction.transaction_type == transaction_type.strip().upper()
+        )
+
+    if start_date and start_date.strip():
+        query = query.where(WalletTransaction.created_at >= start_date.strip())
+    if end_date and end_date.strip():
+        query = query.where(WalletTransaction.created_at <= end_date.strip())
+
+    if sort == "oldest":
+        query = query.order_by(WalletTransaction.created_at.asc())
+    else:
+        query = query.order_by(WalletTransaction.created_at.desc())
+
     # Get transactions
     transactions = db.scalars(
-        select(WalletTransaction)
-        .where(
-            WalletTransaction.wallet_id == wallet.id
-        )
-        .order_by(
-            WalletTransaction.created_at.desc()
-        )
-        .limit(limit)
-        .offset(offset)
+        query.limit(limit).offset(offset)
     ).all()
 
     return transactions

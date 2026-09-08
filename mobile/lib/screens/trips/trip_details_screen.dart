@@ -4,9 +4,12 @@ import '../../core/constants/expense_categories.dart';
 import '../../models/contribution.dart';
 import '../../models/expense.dart';
 import '../../models/trip.dart';
+import '../../models/member_financial_summary.dart';
 import '../../models/trip_member.dart';
 import '../../models/wallet_summary.dart';
 import '../../services/auth_service.dart';
+import '../../services/member_financial_service.dart';
+import '../../services/trip_service.dart';
 import '../expenses/expense_details_screen.dart';
 import '../expenses/expense_history_screen.dart';
 import '../expenses/pay_expense_screen.dart';
@@ -41,6 +44,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   int? _contributionCount;
   List<Expense> _recentExpenses = [];
   List<Contribution> _recentContributions = [];
+  List<MemberFinancialSummary> _memberSummaries = [];
   Map<String, String> _memberNames = {};
   bool _isAdmin = false;
   bool _isLoading = true;
@@ -72,6 +76,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
       final contributionsFuture =
           repo.getContributions(_trip.id).catchError((_) => <Contribution>[]);
       final userFuture = _authService.getCurrentUser().catchError((_) => null);
+      final financialSummaryFuture =
+          MemberFinancialService().getSummary(_trip.id).catchError((_) => <MemberFinancialSummary>[]);
 
       final results = await Future.wait([
         tripFuture,
@@ -80,6 +86,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
         expensesFuture,
         contributionsFuture,
         userFuture,
+        financialSummaryFuture,
       ]);
 
       if (!mounted) return;
@@ -90,6 +97,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
       final expenses = results[3] as List<Expense>;
       final contributions = results[4] as List<Contribution>;
       final currentUser = results[5] as Map<String, dynamic>?;
+      final memberSummaries = results[6] as List<MemberFinancialSummary>;
 
       final names = <String, String>{};
       for (final m in members) {
@@ -105,6 +113,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
         _contributionCount = contributions.length;
         _recentExpenses = expenses.take(3).toList();
         _recentContributions = contributions.take(3).toList();
+        _memberSummaries = memberSummaries;
         _memberNames = names;
         _isAdmin = currentUser != null && currentUser['id'] == _trip.adminId;
         _isLoading = false;
@@ -133,6 +142,98 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     }
   }
 
+  Future<void> _showEditTripDialog() async {
+    final nameController = TextEditingController(text: _trip.name);
+    final destinationController =
+        TextEditingController(text: _trip.destination ?? '');
+    final descriptionController =
+        TextEditingController(text: _trip.description ?? '');
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit Trip Details'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Trip Name *',
+                  hintText: 'e.g. Goa Vacation',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: destinationController,
+                decoration: const InputDecoration(
+                  labelText: 'Destination',
+                  hintText: 'e.g. North Goa',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: descriptionController,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Description',
+                  hintText: 'Trip itinerary notes...',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              if (nameController.text.trim().isEmpty) return;
+              Navigator.pop(ctx, true);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      try {
+        final updated = await TripService().updateTrip(
+          _trip.id,
+          name: nameController.text.trim(),
+          destination: destinationController.text.trim().isNotEmpty
+              ? destinationController.text.trim()
+              : null,
+          description: descriptionController.text.trim().isNotEmpty
+              ? descriptionController.text.trim()
+              : null,
+        );
+        if (mounted) {
+          setState(() {
+            _trip = updated;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Trip details updated successfully')),
+          );
+          _loadDashboard();
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(e.toString().replaceFirst('Exception: ', '')),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isClosed = _trip.status == 'CLOSED';
@@ -141,6 +242,12 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
       appBar: AppBar(
         title: Text(_trip.name),
         actions: [
+          if (_isAdmin && !isClosed)
+            IconButton(
+              onPressed: _showEditTripDialog,
+              icon: const Icon(Icons.edit_outlined),
+              tooltip: 'Edit Trip Details',
+            ),
           IconButton(
             onPressed: () {
               Navigator.push(
@@ -208,6 +315,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
           _buildTripHeader(),
           const SizedBox(height: 16),
           _buildMetricsGrid(),
+          const SizedBox(height: 16),
+          _buildMemberFinancialSnapshotSection(),
           const SizedBox(height: 20),
           _buildRecentExpensesSection(),
           _buildRecentContributionsSection(),
@@ -545,6 +654,91 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
           ],
         ),
       ],
+    );
+  }
+
+  Widget _buildMemberFinancialSnapshotSection() {
+    if (_memberSummaries.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.account_balance_rounded, size: 20, color: Colors.teal),
+                    SizedBox(width: 8),
+                    Text(
+                      'Member Net Positions',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => MemberFinancialScreen(trip: _trip),
+                      ),
+                    ).then((_) => _loadDashboard());
+                  },
+                  child: const Text('View All'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ..._memberSummaries.take(4).map((member) {
+              final net = member.netPaise;
+              final isPositive = net > 0;
+              final isNegative = net < 0;
+
+              final Color color = isPositive
+                  ? Colors.green.shade700
+                  : isNegative
+                      ? Colors.red.shade700
+                      : Colors.grey.shade700;
+              final String label = isPositive
+                  ? '+${_formatMoney(net)} (gets back)'
+                  : isNegative
+                      ? '-${_formatMoney(net.abs())} (owes)'
+                      : '${_formatMoney(0)} (settled)';
+
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        member.name,
+                        style: const TextStyle(fontWeight: FontWeight.w500),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: color,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
     );
   }
 

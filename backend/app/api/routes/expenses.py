@@ -320,6 +320,10 @@ def get_expenses(
     category: str | None = None,
     member_id: UUID | None = None,
     search: str | None = None,
+    min_amount_paise: int | None = Query(None, ge=0),
+    max_amount_paise: int | None = Query(None, ge=0),
+    start_date: str | None = None,
+    end_date: str | None = None,
     sort: str = "newest",
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
@@ -392,9 +396,25 @@ def get_expenses(
             )
         )
 
+    # Filter by amount range
+    if min_amount_paise is not None:
+        query = query.where(Expense.amount_paise >= min_amount_paise)
+    if max_amount_paise is not None:
+        query = query.where(Expense.amount_paise <= max_amount_paise)
+
+    # Filter by date range (created_at)
+    if start_date and start_date.strip():
+        query = query.where(Expense.created_at >= start_date.strip())
+    if end_date and end_date.strip():
+        query = query.where(Expense.created_at <= end_date.strip())
+
     # Sorting
     if sort == "oldest":
         query = query.order_by(Expense.created_at.asc())
+    elif sort == "highest":
+        query = query.order_by(Expense.amount_paise.desc(), Expense.created_at.desc())
+    elif sort == "lowest":
+        query = query.order_by(Expense.amount_paise.asc(), Expense.created_at.desc())
     else:
         query = query.order_by(Expense.created_at.desc())
 

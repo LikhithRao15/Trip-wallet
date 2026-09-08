@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
@@ -179,6 +179,7 @@ def add_member(
 def get_members(
     trip_id: UUID,
     status_filter: str | None = None,
+    search: str | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -214,6 +215,15 @@ def get_members(
 
     if status_filter:
         stmt = stmt.where(TripMember.status == status_filter.strip().upper())
+
+    if search and search.strip():
+        search_pat = f"%{search.strip()}%"
+        stmt = stmt.where(
+            or_(
+                User.name.ilike(search_pat),
+                User.email.ilike(search_pat),
+            )
+        )
 
     stmt = stmt.order_by(TripMember.joined_at.asc())
 

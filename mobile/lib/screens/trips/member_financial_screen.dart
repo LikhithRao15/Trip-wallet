@@ -209,17 +209,25 @@ class _MemberFinancialScreenState
     final bool pay = net < 0;
 
     final String status;
+    final String explanation;
     final Color statusColor;
+    final IconData statusIcon;
 
     if (receive) {
       status = 'Gets Back';
+      explanation = 'Owed to member';
       statusColor = Colors.green;
+      statusIcon = Icons.arrow_downward_rounded;
     } else if (pay) {
       status = 'Owes';
+      explanation = 'Owes to wallet';
       statusColor = Colors.red;
+      statusIcon = Icons.arrow_upward_rounded;
     } else {
       status = 'Settled';
+      explanation = 'All even';
       statusColor = Colors.grey.shade700;
+      statusIcon = Icons.check_circle_outline_rounded;
     }
 
     final String netDisplay;
@@ -227,10 +235,10 @@ class _MemberFinancialScreenState
 
     if (net > 0) {
       netDisplay = '+${_money(net)}';
-      netColor = Colors.green;
+      netColor = Colors.green.shade700;
     } else if (net < 0) {
       netDisplay = '-${_money(net.abs())}';
-      netColor = Colors.red;
+      netColor = Colors.red.shade700;
     } else {
       netDisplay = _money(0);
       netColor = Colors.grey.shade700;
@@ -245,11 +253,8 @@ class _MemberFinancialScreenState
             Row(
               children: [
                 CircleAvatar(
-                  child: Text(
-                    member.name.isEmpty
-                        ? '?'
-                        : member.name[0].toUpperCase(),
-                  ),
+                  backgroundColor: statusColor.withValues(alpha: 0.12),
+                  child: Icon(statusIcon, color: statusColor, size: 20),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -260,7 +265,7 @@ class _MemberFinancialScreenState
                         member.name,
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
-                          fontSize: 17,
+                          fontSize: 16,
                         ),
                       ),
                       Text(
@@ -273,20 +278,34 @@ class _MemberFinancialScreenState
                     ],
                   ),
                 ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: statusColor.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    status,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: statusColor,
-                      fontSize: 13,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: statusColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+                      ),
+                      child: Text(
+                        status,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: statusColor,
+                          fontSize: 12,
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 2),
+                    Text(
+                      explanation,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

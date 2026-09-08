@@ -48,12 +48,34 @@ class WalletService {
   }
 
   Future<List<WalletTransaction>> getTransactions(
-    String tripId,
-  ) async {
+    String tripId, {
+    String? transactionType,
+    String? sort,
+    String? startDate,
+    String? endDate,
+  }) async {
     final token = await _getToken();
 
+    final queryParams = <String, String>{};
+    if (transactionType != null && transactionType.isNotEmpty) {
+      queryParams['transaction_type'] = transactionType;
+    }
+    if (sort != null && sort.isNotEmpty) {
+      queryParams['sort'] = sort;
+    }
+    if (startDate != null && startDate.isNotEmpty) {
+      queryParams['start_date'] = startDate;
+    }
+    if (endDate != null && endDate.isNotEmpty) {
+      queryParams['end_date'] = endDate;
+    }
+
+    final uri = Uri.parse('${ApiConstants.trips}/$tripId/wallet/transactions').replace(
+      queryParameters: queryParams.isNotEmpty ? queryParams : null,
+    );
+
     final response = await _apiClient.get(
-      '${ApiConstants.trips}/$tripId/wallet/transactions',
+      uri.toString(),
       token: token,
     );
 

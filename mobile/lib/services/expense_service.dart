@@ -57,6 +57,10 @@ class ExpenseService {
     String? memberId,
     String? search,
     String? sort,
+    int? minAmountPaise,
+    int? maxAmountPaise,
+    String? startDate,
+    String? endDate,
   }) async {
     final token = await _getToken();
 
@@ -72,6 +76,18 @@ class ExpenseService {
     }
     if (sort != null && sort.isNotEmpty) {
       queryParams['sort'] = sort;
+    }
+    if (minAmountPaise != null) {
+      queryParams['min_amount_paise'] = minAmountPaise.toString();
+    }
+    if (maxAmountPaise != null) {
+      queryParams['max_amount_paise'] = maxAmountPaise.toString();
+    }
+    if (startDate != null && startDate.isNotEmpty) {
+      queryParams['start_date'] = startDate;
+    }
+    if (endDate != null && endDate.isNotEmpty) {
+      queryParams['end_date'] = endDate;
     }
 
     final uri = Uri.parse('${ApiConstants.trips}/$tripId/expenses').replace(

@@ -7,6 +7,10 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "development"
     CORS_ORIGINS: str = "*"
     LOG_LEVEL: str = "INFO"
+    RAZORPAY_KEY_ID: str
+    RAZORPAY_KEY_SECRET: str
+    RAZORPAY_WEBHOOK_SECRET: str
+
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -18,6 +18,7 @@ from app.api.routes.reports import router as reports_router
 from app.api.routes.notifications import router as notifications_router
 from app.api.routes.activity import router as activity_router
 from app.api.routes.sync import router as sync_router
+from app.api.routes.payments import router as payments_router,webhook_router
 
 logger = logging.getLogger("trip_wallet")
 logging.basicConfig(level=settings.LOG_LEVEL)
@@ -68,6 +69,8 @@ app.include_router(reports_router)
 app.include_router(notifications_router)
 app.include_router(activity_router)
 app.include_router(sync_router)
+app.include_router(payments_router)
+app.include_router(webhook_router)
 
 
 @app.get("/")

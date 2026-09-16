@@ -1,0 +1,477 @@
+from app.db import database
+from uuid import UUID, uuid4
+
+from fastapi import APIRouter, Depends, Header, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.api.dependencies import get_current_user
+from app.core.config import settings
+from app.db.database import get_db
+from app.models.payment import Payment
+from app.models.trip import Trip
+from app.models.trip_member import TripMember
+from app.models.user import User
+from app.schemas.payment import PaymentOrderCreate, PaymentOrderResponse,PaymentVerifyRequest,PaymentVerifyResponse
+from app.services.idempotency import create_request_hash
+from app.services.payment_service import (
+    create_razorpay_order,
+    fetch_razorpay_payment,
+    verify_razorpay_payment_signature,
+)
+from app.services.contribution_service import create_contribution_from_payment
+
+
+router = APIRouter(
+    prefix="/trips/{trip_id}/payments",
+    tags=["Payments"],
+)
+webhook_router = APIRouter(
+    prefix="/payments",
+    tags=["Payments"],
+)
+
+
+@router.post(
+    "/order",
+    response_model=PaymentOrderResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_payment_order(
+    trip_id: UUID,
+    data: PaymentOrderCreate,
+    idempotency_key: str = Header(..., alias="Idempotency-Key"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # ---------------------------------------------------------
+    # 1. Validate Idempotency-Key
+    # ---------------------------------------------------------
+    if not idempotency_key.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Idempotency-Key cannot be empty",
+        )
+
+    if len(idempotency_key) > 100:
+        raise HTTPException(
+            status_code=400,
+            detail="Idempotency-Key must be 100 characters or fewer",
+        )
+
+    # ---------------------------------------------------------
+    # 2. Get trip
+    # ---------------------------------------------------------
+    trip = db.scalar(
+        select(Trip).where(Trip.id == trip_id)
+    )
+
+    if not trip:
+        raise HTTPException(
+            status_code=404,
+            detail="Trip not found",
+        )
+
+    # ---------------------------------------------------------
+    # 3. Payment is allowed only for active trips
+    # ---------------------------------------------------------
+    if trip.status != "ACTIVE":
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot add money to a closed trip",
+        )
+
+    if getattr(trip, "settlement_status", "OPEN") == "SETTLED":
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot add money to a settled trip",
+        )
+
+    # ---------------------------------------------------------
+    # 4. Razorpay currently uses INR for this project
+    # ---------------------------------------------------------
+    if trip.currency.upper() != "INR":
+        raise HTTPException(
+            status_code=400,
+            detail="Online payments are currently supported only for INR trips",
+        )
+
+    # ---------------------------------------------------------
+    # 5. Verify authenticated user is an active member
+    # ---------------------------------------------------------
+    member = db.scalar(
+        select(TripMember).where(
+            TripMember.trip_id == trip_id,
+            TripMember.user_id == current_user.id,
+            TripMember.status == "ACTIVE",
+        )
+    )
+
+    if not member:
+        raise HTTPException(
+            status_code=403,
+            detail="You are not an active member of this trip",
+        )
+
+    # ---------------------------------------------------------
+    # 6. Create deterministic request hash
+    # ---------------------------------------------------------
+    request_hash = create_request_hash(
+        {
+            "amount_paise": data.amount_paise,
+            "user_id": str(current_user.id),
+        }
+    )
+
+    # ---------------------------------------------------------
+    # 7. Check whether this request was already processed
+    # ---------------------------------------------------------
+    existing_payment = db.scalar(
+        select(Payment).where(
+            Payment.trip_id == trip_id,
+            Payment.user_id == current_user.id,
+            Payment.idempotency_key == idempotency_key,
+        )
+    )
+
+    if existing_payment:
+        if existing_payment.amount_paise != data.amount_paise:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Idempotency-Key was already used with a different amount",
+            )
+
+        return PaymentOrderResponse(
+            payment_id=existing_payment.id,
+            razorpay_order_id=existing_payment.provider_order_id,
+            amount_paise=existing_payment.amount_paise,
+            currency=trip.currency.upper(),
+            razorpay_key_id=settings.RAZORPAY_KEY_ID,
+            status=existing_payment.status,
+        )
+
+    # ---------------------------------------------------------
+    # 8. Generate our internal payment ID first
+    # ---------------------------------------------------------
+    payment_id = uuid4()
+
+    receipt = f"trip_wallet_{payment_id}"
+
+    # ---------------------------------------------------------
+    # 9. Create Razorpay order
+    # ---------------------------------------------------------
+    try:
+        razorpay_order = create_razorpay_order(
+            amount_paise=data.amount_paise,
+            receipt=receipt,
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to create payment order. Please try again.",
+        )
+
+    # ---------------------------------------------------------
+    # 10. Save payment record
+    # ---------------------------------------------------------
+    payment = Payment(
+        id=payment_id,
+        trip_id=trip_id,
+        user_id=current_user.id,
+        amount_paise=data.amount_paise,
+        provider="razorpay",
+        provider_order_id=razorpay_order["id"],
+        status="CREATED",
+        idempotency_key=idempotency_key,
+    )
+
+    db.add(payment)
+
+    try:
+        db.commit()
+        db.refresh(payment)
+    except Exception:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail="Payment order could not be saved. Please try again.",
+        )
+
+    # ---------------------------------------------------------
+    # 11. Return only checkout-safe information
+    # ---------------------------------------------------------
+    return PaymentOrderResponse(
+        payment_id=payment.id,
+        razorpay_order_id=payment.provider_order_id,
+        amount_paise=payment.amount_paise,
+        currency=trip.currency.upper(),
+        razorpay_key_id=settings.RAZORPAY_KEY_ID,
+        status=payment.status,
+    )
+
+
+@router.post(
+    "/verify",
+    response_model=PaymentVerifyResponse,
+)
+def verify_payment(
+    trip_id: UUID,
+    data: PaymentVerifyRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # ---------------------------------------------------------
+    # 1. Find payment using OUR stored Razorpay order ID
+    # ---------------------------------------------------------
+    payment = db.scalar(
+        select(Payment)
+        .where(
+            Payment.trip_id == trip_id,
+            Payment.provider_order_id == data.razorpay_order_id,
+        )
+        .with_for_update()
+    )
+
+    if not payment:
+        raise HTTPException(
+            status_code=404,
+            detail="Payment order not found",
+        )
+
+    # ---------------------------------------------------------
+    # 2. Make sure this payment belongs to the logged-in user
+    # ---------------------------------------------------------
+    if payment.user_id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="You are not authorized to verify this payment",
+        )
+
+    # ---------------------------------------------------------
+    # 3. Get trip and validate it is still payable
+    # ---------------------------------------------------------
+    trip = db.scalar(
+        select(Trip).where(Trip.id == trip_id)
+    )
+
+    if not trip:
+        raise HTTPException(
+            status_code=404,
+            detail="Trip not found",
+        )
+
+    if trip.status != "ACTIVE":
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot complete payment for a closed trip",
+        )
+
+    if getattr(trip, "settlement_status", "OPEN") == "SETTLED":
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot complete payment for a settled trip",
+        )
+
+    # ---------------------------------------------------------
+    # 4. Prevent duplicate wallet credit
+    # ---------------------------------------------------------
+    if payment.status == "SUCCESS":
+        if payment.provider_payment_id != data.razorpay_payment_id:
+            raise HTTPException(
+                status_code=409,
+                detail="Payment is already completed with a different payment ID",
+            )
+
+        # Payment already succeeded.
+        # If contribution_id exists, wallet was already credited.
+        if payment.contribution_id is not None:
+            return PaymentVerifyResponse(
+                payment_id=payment.id,
+                razorpay_payment_id=payment.provider_payment_id,
+                razorpay_order_id=payment.provider_order_id,
+                status=payment.status,
+            )
+
+        # Defensive recovery:
+        # A previous request may have marked payment SUCCESS
+        # but failed before linking the contribution.
+        contribution_key = f"payment:{payment.id}"
+
+        try:
+            contribution = create_contribution_from_payment(
+                db,
+                trip=trip,
+                user_id=payment.user_id,
+                amount_paise=payment.amount_paise,
+                idempotency_key=contribution_key,
+                note=f"Razorpay payment {payment.provider_payment_id}",
+            )
+
+            payment.contribution_id = contribution.id
+
+            db.commit()
+            db.refresh(payment)
+
+        except Exception:
+            db.rollback()
+            raise
+
+        return PaymentVerifyResponse(
+            payment_id=payment.id,
+            razorpay_payment_id=payment.provider_payment_id,
+            razorpay_order_id=payment.provider_order_id,
+            status=payment.status,
+        )
+
+    # ---------------------------------------------------------
+    # 5. Verify that the order ID belongs to our stored order
+    # ---------------------------------------------------------
+    if payment.provider_order_id != data.razorpay_order_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid payment order",
+        )
+
+    # ---------------------------------------------------------
+    # 6. Verify Razorpay signature
+    # ---------------------------------------------------------
+    is_valid = verify_razorpay_payment_signature(
+        order_id=payment.provider_order_id,
+        payment_id=data.razorpay_payment_id,
+        signature=data.razorpay_signature,
+    )
+
+    if not is_valid:
+        raise HTTPException(
+            status_code=400,
+            detail="Payment signature verification failed",
+        )
+
+    # ---------------------------------------------------------
+# 7. Fetch authoritative payment details from Razorpay
+# ---------------------------------------------------------
+    try:
+        razorpay_payment = fetch_razorpay_payment(
+            data.razorpay_payment_id
+        )
+    except Exception:
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to verify payment status with Razorpay",
+        )
+
+# ---------------------------------------------------------
+# 8. Verify payment identity
+# ---------------------------------------------------------
+    if razorpay_payment.get("id") != data.razorpay_payment_id:
+        raise HTTPException(
+            status_code=400,
+        detail="Invalid Razorpay payment",
+        )
+
+    if razorpay_payment.get("order_id") != payment.provider_order_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Payment does not belong to this order",
+        )
+
+# ---------------------------------------------------------
+# 9. Verify amount
+# ---------------------------------------------------------
+    if razorpay_payment.get("amount") != payment.amount_paise:
+        raise HTTPException(
+            status_code=400,
+            detail="Payment amount mismatch",
+        )
+
+# ---------------------------------------------------------
+# 10. Verify currency
+# ---------------------------------------------------------
+    if razorpay_payment.get("currency") != "INR":
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid payment currency",
+        )
+
+# ---------------------------------------------------------
+# 11. Verify payment is captured
+# ---------------------------------------------------------
+    if (
+        razorpay_payment.get("status") != "captured"
+        or razorpay_payment.get("captured") is not True
+    ):
+        raise HTTPException(
+            status_code=400,
+         detail="Payment has not been captured",
+        )
+
+# ---------------------------------------------------------
+# 12. Mark payment successful
+# ---------------------------------------------------------
+    payment.provider_payment_id = data.razorpay_payment_id
+    payment.status = "SUCCESS"
+
+    # ---------------------------------------------------------
+    # 8. Create contribution + wallet transaction
+    # ---------------------------------------------------------
+    contribution_key = f"payment:{payment.id}"
+
+    try:
+        contribution = create_contribution_from_payment(
+            db,
+            trip=trip,
+            user_id=payment.user_id,
+            amount_paise=payment.amount_paise,
+            idempotency_key=contribution_key,
+            note=f"Razorpay payment {payment.provider_payment_id}",
+        )
+
+        # Link the financial contribution to this payment.
+        payment.contribution_id = contribution.id
+
+        # IMPORTANT:
+        # Payment SUCCESS + Contribution + WalletTransaction
+        # + wallet balance update are committed together.
+        db.commit()
+
+        db.refresh(payment)
+
+    except Exception:
+        db.rollback()
+        raise
+
+    # ---------------------------------------------------------
+    # 9. Return successful payment
+    # ---------------------------------------------------------
+    return PaymentVerifyResponse(
+        payment_id=payment.id,
+        razorpay_payment_id=payment.provider_payment_id,
+        razorpay_order_id=payment.provider_order_id,
+        status=payment.status,
+    )
+@webhook_router.post("/webhook")
+def razorpay_webhook(
+    payload: bytes,
+    x_razorpay_signature: str = Header(..., alias="X-Razorpay-Signature"),
+):
+    import hmac
+    import hashlib
+
+    expected_signature = hmac.new(
+        settings.RAZORPAY_WEBHOOK_SECRET.encode("utf-8"),
+        payload,
+        hashlib.sha256,
+    ).hexdigest()
+
+    if not hmac.compare_digest(
+        expected_signature,
+        x_razorpay_signature,
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid webhook signature",
+        )
+
+    return {
+        "status": "received",
+    }

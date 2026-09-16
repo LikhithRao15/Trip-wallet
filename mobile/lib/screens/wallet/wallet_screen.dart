@@ -6,6 +6,7 @@ import '../../models/wallet_transaction.dart';
 import '../../services/wallet_service.dart';
 import 'add_contribution_screen.dart';
 import 'contribution_history_screen.dart';
+import 'online_payment_screen.dart';
 import 'wallet_transactions_screen.dart';
 import '../expenses/pay_expense_screen.dart';
 
@@ -40,6 +41,21 @@ class _WalletScreenState extends State<WalletScreen> {
     context,
     MaterialPageRoute(
       builder: (context) => AddContributionScreen(
+        trip: widget.trip,
+      ),
+    ),
+  );
+
+  if (result == true && mounted) {
+    await _loadWallet();
+  }
+}
+
+Future<void> _openOnlinePayment() async {
+  final result = await Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => OnlinePaymentScreen(
         trip: widget.trip,
       ),
     ),
@@ -105,12 +121,19 @@ Future<void> _openPayExpense() async {
       appBar: AppBar(
         title: const Text('Trip Wallet'),
         actions: [
-          if (widget.trip.status != 'CLOSED')
+          if (widget.trip.status != 'CLOSED') ...[
+            if (widget.trip.currency.toUpperCase() == 'INR')
+              IconButton(
+                onPressed: _isLoading ? null : _openOnlinePayment,
+                icon: const Icon(Icons.account_balance_wallet_outlined),
+                tooltip: 'Add Money via Razorpay',
+              ),
             IconButton(
               onPressed: _isLoading ? null : _openAddContribution,
               icon: const Icon(Icons.add),
               tooltip: 'Add Contribution',
             ),
+          ],
           IconButton(
             onPressed: _isLoading
                 ? null

@@ -165,3 +165,41 @@ In production, automated reconciliation jobs are critical:
    - Mobile and web clients receive only the public `key_id` and short-lived `order_id`. Secrets must never be packaged into mobile APKs, Flutter assets, or web bundles.
 3. **Masked Metadata in Logs:**
    - Payment-related logs must mask bank accounts, UPI VPA handles, and customer phone numbers in compliance with privacy and data protection standards.
+
+---
+
+## 9. Implemented Razorpay Test Mode Setup & Production Architecture
+
+The Trip Wallet payment pipeline is now fully implemented, verified, and hardened for Razorpay Test Mode and production.
+
+### Deployment & Configuration
+- **Backend URL:** `https://trip-wallet-api.onrender.com`
+- **Webhook Endpoint:** `https://trip-wallet-api.onrender.com/payments/webhook`
+- **Environment Variables (Backend & Render):**
+  - `RAZORPAY_KEY_ID`: Razorpay Test / Live Key ID (e.g. `rzp_test_...`)
+  - `RAZORPAY_KEY_SECRET`: Razorpay Secret Key (kept exclusively on server, never sent to clients)
+  - `RAZORPAY_WEBHOOK_SECRET`: Secret configured in Razorpay Dashboard for HMAC-SHA256 signature verification
+
+### Razorpay Dashboard Webhook Configuration
+1. Log in to the [Razorpay Dashboard](https://dashboard.razorpay.com/) (Test Mode).
+2. Navigate to **Settings** > **Webhooks** > **Add New Webhook**.
+3. **Webhook URL:** `https://trip-wallet-api.onrender.com/payments/webhook`
+4. **Secret:** Set to the exact value of `RAZORPAY_WEBHOOK_SECRET`.
+5. **Active Events:**
+   - `payment.captured`
+   - `payment.failed`
+
+### Dual Settlement & Deduplication Architecture
+The backend supports two complementary channels for final settlement:
+1. **Client-Driven Synchronous Verification (`POST /trips/{trip_id}/payments/verify`):**
+   - Flutter passes `razorpay_payment_id`, `razorpay_order_id`, and `razorpay_signature`.
+   - Backend verifies HMAC-SHA256 signature and fetches authoritative payment details from Razorpay API.
+   - Idempotently marks Payment `SUCCESS`, creates `Contribution`, and updates `Wallet.balance_paise`.
+2. **Asynchronous Webhook Processing (`POST /payments/webhook`):**
+   - Validates raw body HMAC-SHA256 signature using `X-Razorpay-Signature`.
+   - Persistent deduplication via table `payment_webhook_events` (`event_id` indexed uniquely).
+   - If webhook arrives after client verification, returns `{"status": "already_processed"}` without double-crediting.
+   - If webhook arrives before client verification (or if client network drops), webhook safely credits the ledger once.
+   - For `payment.failed`, transitions internal Payment status to `FAILED` without touching the wallet balance.
+   - Enforces active, unsettled trip status and strict INR currency validation.
+

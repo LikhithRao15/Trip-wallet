@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trip Wallet — Shared Digital Wallet & Expense Management for Group Trips</title>
+  <meta name="description" content="A shared digital wallet and expense management app for group trips. Contribute funds securely via Razorpay, track balances, and split expenses seamlessly.">
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+  <!-- Navigation Bar -->
+  <header class="navbar">
+    <div class="container">
+      <a href="/" class="brand">
+        <span class="brand-icon">
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="32" height="32" rx="8" fill="#4F46E5"/>
+            <path d="M7 11C7 9.89543 7.89543 9 9 9H23C24.1046 9 25 9.89543 25 11V21C25 22.1046 24.1046 23 23 23H9C7.89543 23 7 22.1046 7 21V11Z" stroke="#F8FAFC" stroke-width="2"/>
+            <circle cx="20" cy="16" r="2" fill="#34D399"/>
+            <path d="M7 14H25" stroke="#F8FAFC" stroke-width="1.5" stroke-dasharray="2 2"/>
+          </svg>
+        </span>
+        Trip Wallet
+      </a>
+
+      <nav>
+        <ul class="nav-links" id="navLinks">
+          <li><a href="#about" class="nav-link">About</a></li>
+          <li><a href="#how-it-works" class="nav-link">How It Works</a></li>
+          <li><a href="#payments" class="nav-link">Payments & Security</a></li>
+          <li><a href="#faq" class="nav-link">FAQ</a></li>
+          <li><a href="#contact" class="nav-link">Contact</a></li>
+        </ul>
+      </nav>
+
+      <div class="nav-cta">
+        <a href="#download" class="btn btn-primary">Get App</a>
+        <button class="menu-toggle" id="menuToggle" aria-label="Toggle navigation menu">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="hero">
+    <div class="container">
+      <div class="badge badge-green">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><circle cx="6" cy="6" r="4"/></svg>
+        Verified Secure Payment Processing
+      </div>
+      <h1 class="hero-title">
+        The Shared Digital Wallet for <span class="gradient-text">Group Trips</span>
+      </h1>
+      <p class="hero-subtitle">
+        Trip Wallet is a shared digital wallet and expense management app for group trips. Trip members contribute money to a common wallet, while trip admins track expenses, split costs, and manage final settlements with complete financial transparency.
+      </p>
+      <div class="hero-actions">
+        <a href="#download" class="btn btn-primary btn-lg">Download / Coming Soon</a>
+        <a href="#how-it-works" class="btn btn-secondary btn-lg">Learn More</a>
+      </div>
+
+      <div class="hero-stats">
+        <div class="stat-card">
+          <div class="stat-icon">💳</div>
+          <div class="stat-title">Shared Pool Wallet</div>
+          <div class="stat-desc">Members contribute upfront via online payment so expenses are covered without awkward IOUs.</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">🛡️</div>
+          <div class="stat-title">Razorpay Integration</div>
+          <div class="stat-desc">Funds processed through Razorpay's trusted infrastructure with strict server-side verification.</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon">⚖️</div>
+          <div class="stat-title">Transparent Splits</div>
+          <div class="stat-desc">Equal, custom, or itemized expense splits with automated balance calculations and full audit logs.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- About Section -->
+  <section id="about" class="section">
+    <div class="container">
+      <div class="section-header">
+        <h2 class="section-title">About Trip Wallet</h2>
+        <p class="section-subtitle">
+          Managing finances across friends and group travelers should be effortless, clear, and fair. Trip Wallet replaces messy spreadsheets and retroactive split requests with a proactive shared pool.
+        </p>
+      </div>
+
+      <div class="grid-2">
+        <div class="feature-card">
+          <div class="card-icon">👥</div>
+          <h3>Collaborative Group Budgeting</h3>
+          <p>
+            Instead of one person bearing large upfront expenses (like villas, transport, or groceries) and chasing people down weeks later, Trip Wallet allows everyone to pool funds into a shared trip wallet before or during the journey.
+          </p>
+        </div>
+        <div class="feature-card">
+          <div class="card-icon">📊</div>
+          <h3>Real-Time Financial Visibility</h3>
+          <p>
+            Every rupee contributed, spent, or refunded is recorded with immutable audit history. Every member can see current wallet balance, individual contribution history, and itemized receipts on their own device.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works Section -->
+  <section id="how-it-works" class="section" style="background: rgba(19, 27, 46, 0.4);">
+    <div class="container">
+      <div class="section-header">
+        <h2 class="section-title">How Trip Wallet Works</h2>
+        <p class="section-subtitle">A simple 6-step lifecycle from trip planning to final settlement.</p>
+      </div>
+
+      <div class="grid-3">
+        <div class="feature-card">
+          <span class="card-step-num">01</span>
+          <div class="card-icon">🏖️</div>
+          <h3>1. Create a Trip</h3>
+          <p>Set up a trip in seconds with destination, dates, and base currency. Define default spending categories and invite parameters.</p>
+        </div>
+
+        <div class="feature-card">
+          <span class="card-step-num">02</span>
+          <div class="card-icon">✉️</div>
+          <h3>2. Invite Members</h3>
+          <p>Share a secure trip invite code or link with fellow travelers. Members join on their mobile device and access the shared trip overview.</p>
+        </div>
+
+        <div class="feature-card">
+          <span class="card-step-num">03</span>
+          <div class="card-icon">💰</div>
+          <h3>3. Add Money to the Shared Wallet</h3>
+          <p>Members contribute their share online. Orders are created and processed securely via Razorpay, verified by the backend, and credited to the wallet balance.</p>
+        </div>
+
+        <div class="feature-card">
+          <span class="card-step-num">04</span>
+          <div class="card-icon">🧾</div>
+          <h3>4. Record & Split Expenses</h3>
+          <p>Admins and members record on-trip spending. Choose equal split, exact amounts, or custom proportions with participant tracking.</p>
+        </div>
+
+        <div class="feature-card">
+          <span class="card-step-num">05</span>
+          <div class="card-icon">📈</div>
+          <h3>5. Track Contributions & Balances</h3>
+          <p>Monitor remaining wallet balance, total group spending by category, and individual member balances with complete transparency.</p>
+        </div>
+
+        <div class="feature-card">
+          <span class="card-step-num">06</span>
+          <div class="card-icon">🤝</div>
+          <h3>6. Settle the Trip</h3>
+          <p>When the trip concludes, generate an automated settlement report detailing remaining funds, refunds due, or outstanding member balances.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Payments & Security Section -->
+  <section id="payments" class="section">
+    <div class="container">
+      <div class="section-header">
+        <h2 class="section-title">Payments & Security</h2>
+        <p class="section-subtitle">
+          Built with bank-grade security and financial integrity at every step.
+        </p>
+      </div>
+
+      <div class="security-banner">
+        <div>
+          <h3>Online Wallet Funding Processed by Razorpay</h3>
+          <p style="margin-top: 8px;">
+            Trip Wallet partners with Razorpay Payment Gateway to provide safe, reliable, and instantaneous digital payment processing across UPI, debit/credit cards, and net banking.
+          </p>
+        </div>
+
+        <div class="security-badge-grid">
+          <div class="security-item">
+            <span class="security-item-icon">✓</span>
+            <div>
+              <strong style="color: var(--text-primary); display: block;">Server-Side Verification</strong>
+              <span>Every transaction signature is verified on our backend servers before any wallet contribution is credited.</span>
+            </div>
+          </div>
+
+          <div class="security-item">
+            <span class="security-item-icon">🔒</span>
+            <div>
+              <strong style="color: var(--text-primary); display: block;">Zero Credential Storage</strong>
+              <span>We never collect or store UPI PINs, card CVVs, card numbers, or bank passwords. All sensitive payment data remains securely tokenized with Razorpay.</span>
+            </div>
+          </div>
+
+          <div class="security-item">
+            <span class="security-item-icon">⚡</span>
+            <div>
+              <strong style="color: var(--text-primary); display: block;">Atomic Balance Updates</strong>
+              <span>Failed or incomplete payments never credit the wallet. Balances update only upon definitive payment capture verification.</span>
+            </div>
+          </div>
+
+          <div class="security-item">
+            <span class="security-item-icon">📜</span>
+            <div>
+              <strong style="color: var(--text-primary); display: block;">Idempotency & Audit Logs</strong>
+              <span>Double-charging protections and webhook deduplication guarantee financial records match reality down to the exact paisa.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ Section -->
+  <section id="faq" class="section" style="background: rgba(19, 27, 46, 0.4);">
+    <div class="container">
+      <div class="section-header">
+        <h2 class="section-title">Frequently Asked Questions</h2>
+        <p class="section-subtitle">Common questions regarding Trip Wallet features, payments, and settlements.</p>
+      </div>
+
+      <div class="faq-list">
+        <div class="faq-card">
+          <div class="faq-question">What is Trip Wallet?</div>
+          <div class="faq-answer">
+            Trip Wallet is a specialized group finance and shared digital wallet application designed for group trips, tours, and shared vacations. It allows trip members to pool money together into a common trip purse and empowers the trip admin to track expenses, manage splits, and settle balances transparently.
+          </div>
+        </div>
+
+        <div class="faq-card">
+          <div class="faq-question">How does adding money to the trip wallet work?</div>
+          <div class="faq-answer">
+            Any member invited to a trip can contribute funds. When you enter an amount to contribute, the app creates a secure payment order through our backend and launches the Razorpay payment checkout. You can pay using UPI, cards, or net banking. Once Razorpay confirms the transaction and our backend cryptographically verifies the signature, your contribution is credited to the shared wallet balance immediately.
+          </div>
+        </div>
+
+        <div class="faq-card">
+          <div class="faq-question">What happens if a payment fails?</div>
+          <div class="faq-answer">
+            If a payment fails, is canceled by the user, or encounters a network interruption, no funds are added to the trip wallet. If money is deducted from your bank account during a failed attempt, it is typically reversed automatically by your issuing bank or Razorpay within standard banking timelines (usually 5 to 7 business days).
+          </div>
+        </div>
+
+        <div class="faq-card">
+          <div class="faq-question">How are expenses split among trip members?</div>
+          <div class="faq-answer">
+            Trip Wallet offers flexible expense splits. When recording a group payment, you can split the cost equally among all trip participants, assign custom amounts, or exclude members who did not take part in a specific activity. The app automatically computes who owes what against their initial contributions.
+          </div>
+        </div>
+
+        <div class="faq-card">
+          <div class="faq-question">How is the remaining wallet balance handled at the end of the trip?</div>
+          <div class="faq-answer">
+            When all expenses are logged and the trip is closed by the admin, Trip Wallet calculates each member's final balance based on their total contributions minus their total share of expenses. The final settlement summary specifies the exact refund or payout amounts due to each member according to Trip Wallet's settlement policy.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Contact Section -->
+  <section id="contact" class="section">
+    <div class="container">
+      <div class="section-header">
+        <h2 class="section-title">Contact Us</h2>
+        <p class="section-subtitle">Have questions or need assistance with Trip Wallet? Reach out to our team.</p>
+      </div>
+
+      <div class="contact-container">
+        <div class="contact-card">
+          <div class="card-icon" style="margin: 0 auto 16px;">📧</div>
+          <h3>Customer Support</h3>
+          <p>For inquiries, transaction assistance, or general questions:</p>
+          <p style="margin-top: 12px; font-weight: 600; color: var(--text-primary);">
+            <a href="mailto:support@tripwallet.example.com">support@tripwallet.example.com</a>
+            <span class="placeholder-tag">[Placeholder — replace with your official email]</span>
+          </p>
+        </div>
+
+        <div class="contact-card">
+          <div class="card-icon" style="margin: 0 auto 16px;">📞</div>
+          <h3>Phone / Helpline</h3>
+          <p>Available Monday to Friday, 9:00 AM – 6:00 PM IST:</p>
+          <p style="margin-top: 12px; font-weight: 600; color: var(--text-primary);">
+            +91-XXXXXXXXXX
+            <span class="placeholder-tag">[Placeholder — replace with your official phone]</span>
+          </p>
+        </div>
+
+        <div class="contact-card">
+          <div class="card-icon" style="margin: 0 auto 16px;">🏢</div>
+          <h3>Registered Office / Operating Address</h3>
+          <p>Trip Wallet Operations</p>
+          <p style="margin-top: 12px; font-weight: 500; color: var(--text-primary);">
+            [Your Registered Business / Operating Address]
+            <br>
+            <span class="placeholder-tag">[Placeholder — enter your real operating address before submission]</span>
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Download / Coming Soon CTA -->
+  <section id="download" class="section" style="background: linear-gradient(180deg, rgba(11, 15, 25, 0.4) 0%, rgba(19, 27, 46, 0.8) 100%);">
+    <div class="container" style="text-align: center;">
+      <div class="badge">Mobile App</div>
+      <h2 class="section-title" style="margin-bottom: 20px;">Ready for Smarter Group Travel?</h2>
+      <p class="section-subtitle" style="max-width: 600px; margin: 0 auto 32px;">
+        Trip Wallet is currently in active development and early access rollout. Stay tuned for public mobile app store releases on Android and iOS.
+      </p>
+      <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
+        <span class="btn btn-secondary" style="cursor: default;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17.523 15.3414C17.523 15.3414 17.5146 15.3414 17.5061 15.3414C16.9248 15.3414 16.4259 14.9392 16.3218 14.3644C16.2084 13.7317 16.6346 13.1362 17.2764 13.0219C17.909 12.9094 18.5136 13.3364 18.627 13.9691C18.7303 14.5439 18.3281 15.1102 17.7541 15.3117C17.6791 15.3323 17.6012 15.3414 17.523 15.3414ZM6.47702 15.3414C6.39886 15.3414 6.32101 15.3323 6.246 15.3117C5.67202 15.1102 5.26982 14.5439 5.37311 13.9691C5.48651 13.3364 6.09113 12.9094 6.72376 13.0219C7.36553 13.1362 7.79173 13.7317 7.67833 14.3644C7.57425 14.9392 7.0753 15.3414 6.49402 15.3414H6.47702ZM18.9959 9.3879L20.8931 6.10173C21.0368 5.85273 20.9515 5.53488 20.7025 5.39121C20.4535 5.24754 20.1356 5.33282 19.992 5.58182L18.0494 8.94676C16.2847 8.14088 14.2497 7.67499 12.0001 7.67499C9.75037 7.67499 7.71542 8.14088 5.95074 8.94676L4.00816 5.58182C3.86449 5.33282 3.54664 5.24754 3.29764 5.39121C3.04864 5.53488 2.96336 5.85273 3.10703 6.10173L5.00421 9.3879C2.10091 10.9859 0.125 13.9678 0 17.4851H24C23.875 13.9678 21.8992 10.9859 18.9959 9.3879Z"/></svg>
+          Google Play (Coming Soon)
+        </span>
+        <span class="btn btn-secondary" style="cursor: default;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M15.97 6.37c.61-.75 1.04-1.8 1.01-2.87-.96.04-2.09.64-2.74 1.4-.55.63-.99 1.68-.86 2.7 1.05.08 2.12-.57 2.59-1.23z"/></svg>
+          App Store (Coming Soon)
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div class="footer-brand">
+          <div class="brand">
+            <span class="brand-icon">
+              <svg width="28" height="28" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect width="32" height="32" rx="8" fill="#4F46E5"/>
+                <path d="M7 11C7 9.89543 7.89543 9 9 9H23C24.1046 9 25 9.89543 25 11V21C25 22.1046 24.1046 23 23 23H9C7.89543 23 7 22.1046 7 21V11Z" stroke="#F8FAFC" stroke-width="2"/>
+                <circle cx="20" cy="16" r="2" fill="#34D399"/>
+              </svg>
+            </span>
+            Trip Wallet
+          </div>
+          <p>
+            A shared digital wallet and expense management platform for group trips and vacations.
+          </p>
+        </div>
+
+        <div class="footer-col">
+          <h4>Navigation</h4>
+          <ul class="footer-links">
+            <li><a href="#about">About</a></li>
+            <li><a href="#how-it-works">How It Works</a></li>
+            <li><a href="#payments">Payments</a></li>
+            <li><a href="#faq">FAQ</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Legal & Policies</h4>
+          <ul class="footer-links">
+            <li><a href="/privacy">Privacy Policy</a></li>
+            <li><a href="/terms">Terms & Conditions</a></li>
+            <li><a href="/refund">Refund & Cancellation</a></li>
+          </ul>
+        </div>
+
+        <div class="footer-col">
+          <h4>Contact</h4>
+          <ul class="footer-links">
+            <li><a href="#contact">Support</a></li>
+            <li><a href="mailto:support@tripwallet.example.com">Email Us</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <div>
+          &copy; 2026 Trip Wallet. All rights reserved.
+        </div>
+        <div>
+          Payments securely processed via <strong style="color: var(--text-primary);">Razorpay</strong>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Responsive Mobile Menu Toggle
+    const menuToggle = document.getElementById('menuToggle');
+    const navLinks = document.getElementById('navLinks');
+    if (menuToggle && navLinks) {
+      menuToggle.addEventListener('click', () => {
+        navLinks.classList.toggle('active');
+      });
+      // Close menu when link is clicked
+      navLinks.querySelectorAll('a').forEach(link => {
+        link.addEventListener('click', () => {
+          navLinks.classList.remove('active');
+        });
+      });
+    }
+  </script>
+</body>
+</html>

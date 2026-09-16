@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — Trip Wallet</title>
+  <meta name="description" content="Trip Wallet Privacy Policy detailing information handling, security standards, and payment processing protections.">
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+  <!-- Navigation Bar -->
+  <header class="navbar">
+    <div class="container">
+      <a href="/" class="brand">
+        <span class="brand-icon">
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="32" height="32" rx="8" fill="#4F46E5"/>
+            <path d="M7 11C7 9.89543 7.89543 9 9 9H23C24.1046 9 25 9.89543 25 11V21C25 22.1046 24.1046 23 23 23H9C7.89543 23 7 22.1046 7 21V11Z" stroke="#F8FAFC" stroke-width="2"/>
+            <circle cx="20" cy="16" r="2" fill="#34D399"/>
+            <path d="M7 14H25" stroke="#F8FAFC" stroke-width="1.5" stroke-dasharray="2 2"/>
+          </svg>
+        </span>
+        Trip Wallet
+      </a>
+
+      <nav>
+        <ul class="nav-links" id="navLinks">
+          <li><a href="/" class="nav-link">Home</a></li>
+          <li><a href="/#about" class="nav-link">About</a></li>
+          <li><a href="/#payments" class="nav-link">Payments</a></li>
+          <li><a href="/#contact" class="nav-link">Contact</a></li>
+        </ul>
+      </nav>
+
+      <div class="nav-cta">
+        <a href="/" class="btn btn-secondary">Back to Home</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Privacy Policy Content -->
+  <main class="legal-page">
+    <div class="container">
+      <div class="legal-header">
+        <h1 class="legal-title">Privacy Policy</h1>
+        <div class="legal-meta">Last Updated: September 16, 2026 | Effective Date: September 16, 2026</div>
+      </div>
+
+      <div class="legal-content">
+        <p>
+          Trip Wallet ("we", "our", or "us") is dedicated to safeguarding the privacy and security of users ("you", "user") who utilize our shared digital wallet and expense management application for group trips. This Privacy Policy clarifies how we collect, store, handle, and protect your information when you use our mobile application and related online services.
+        </p>
+
+        <div class="callout">
+          <strong>Key Security Notice:</strong> Trip Wallet operates with strict financial data isolation. We do not store, process, or have access to your bank passwords, UPI PINs, credit/debit card numbers, or card CVVs. All payment transactions are securely handled by our PCI-DSS compliant payment gateway partner, <strong>Razorpay</strong>.
+        </div>
+
+        <h2>1. Information We Collect</h2>
+        <p>To deliver core trip wallet features and transparent group accounting, we collect the following categories of information:</p>
+        
+        <h3>a. Account Information</h3>
+        <ul>
+          <li><strong>Registration Details:</strong> Your name, email address, phone number, and a secure password hash.</li>
+          <li><strong>Profile Data:</strong> Display name or avatar you choose to associate with your member profile.</li>
+        </ul>
+
+        <h3>b. Trip & Member Information</h3>
+        <ul>
+          <li><strong>Trip Records:</strong> Trip title, destination, dates, currency, and trip invite codes.</li>
+          <li><strong>Group Membership:</strong> Membership status, roles (Admin vs. Member), and activity logs within each trip.</li>
+          <li><strong>Expense Records:</strong> Expense descriptions, amounts, participant splits, timestamps, and spending categories.</li>
+        </ul>
+
+        <h3>c. Payment Transaction Metadata</h3>
+        <p>
+          When you add funds to a shared trip wallet via Razorpay, our backend records only non-sensitive transaction metadata necessary to confirm payment and update balances:
+        </p>
+        <ul>
+          <li>Razorpay Order ID (e.g., <code>order_xxx</code>)</li>
+          <li>Razorpay Payment ID (e.g., <code>pay_xxx</code>)</li>
+          <li>Payment signature token for server-side verification</li>
+          <li>Transaction amount and currency (e.g., INR)</li>
+          <li>Payment status (e.g., pending, captured, failed) and timestamp</li>
+        </ul>
+
+        <h2>2. Information We Never Collect or Store</h2>
+        <p>We believe in strict data minimization regarding sensitive financial credentials. Trip Wallet never receives or stores:</p>
+        <ul>
+          <li>UPI PINs or MPINs</li>
+          <li>Card Verification Values (CVV/CVC)</li>
+          <li>Full 16-digit debit or credit card numbers</li>
+          <li>Net banking passwords or OTPs</li>
+        </ul>
+        <p>
+          All direct payment checkout flows occur inside the encrypted, certified payment modal provided directly by Razorpay.
+        </p>
+
+        <h2>3. How We Use Your Information</h2>
+        <p>We use the collected information solely for legitimate service purposes:</p>
+        <ul>
+          <li>To initialize and authenticate user accounts and manage active sessions.</li>
+          <li>To facilitate shared trip creation, member invites, and expense splitting.</li>
+          <li>To verify Razorpay payment signatures server-side and credit the correct trip wallet atomically.</li>
+          <li>To maintain accurate financial audit trails and compute trip settlement reports.</li>
+          <li>To detect, investigate, and prevent fraudulent transactions or security violations.</li>
+          <li>To provide customer support and respond to user inquiries.</li>
+        </ul>
+
+        <h2>4. Data Sharing & Third-Party Disclosure</h2>
+        <p>We do not sell, rent, or trade your personal data to advertisers or third parties. We share data only with:</p>
+        <ul>
+          <li><strong>Payment Processors:</strong> We communicate with Razorpay Software Private Limited to verify payment status, orders, and legitimate transaction state.</li>
+          <li><strong>Trip Members:</strong> Your name, avatar, contributions, and expense share are visible to fellow members within trips you have joined.</li>
+          <li><strong>Legal & Compliance:</strong> When required by applicable Indian law, court order, or governmental authorities.</li>
+        </ul>
+
+        <h2>5. Data Security Standards</h2>
+        <p>
+          Trip Wallet employs modern industry-standard security measures, including Transport Layer Security (TLS 1.3 / HTTPS encryption) for all data in transit, encrypted storage for sensitive tokens, parameterized queries to prevent SQL injection, and cryptographically signed JWTs for session management.
+        </p>
+
+        <h2>6. Data Retention</h2>
+        <p>
+          We retain your account and trip information for as long as your account remains active or as needed to provide you with historical trip expense statements. You may request deletion of your account and personal details by contacting support.
+        </p>
+
+        <h2>7. Contact for Privacy Questions & Grievances</h2>
+        <p>
+          If you have any questions, concerns, or requests regarding this Privacy Policy or our data handling practices, please reach out to our Grievance Officer:
+        </p>
+        <div style="background: rgba(11, 15, 25, 0.6); padding: 20px; border-radius: var(--radius-md); border: 1px solid var(--border);">
+          <p style="margin-bottom: 6px;"><strong>Privacy & Grievance Officer:</strong> Trip Wallet Privacy Team</p>
+          <p style="margin-bottom: 6px;">
+            <strong>Email:</strong> <a href="mailto:privacy@tripwallet.example.com">privacy@tripwallet.example.com</a>
+            <span class="placeholder-tag">[Placeholder — replace before submission]</span>
+          </p>
+          <p style="margin-bottom: 6px;">
+            <strong>Operating Address:</strong> [Your Registered Business / Operating Address]
+            <span class="placeholder-tag">[Placeholder — replace before submission]</span>
+          </p>
+          <p style="margin-bottom: 0;"><strong>Phone:</strong> +91-XXXXXXXXXX <span class="placeholder-tag">[Placeholder]</span></p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-bottom">
+        <div>&copy; 2026 Trip Wallet. All rights reserved.</div>
+        <div class="footer-links" style="flex-direction: row; gap: 20px;">
+          <a href="/">Home</a>
+          <a href="/terms">Terms & Conditions</a>
+          <a href="/refund">Refund Policy</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>

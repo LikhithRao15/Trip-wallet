@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="walletGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4f46e5" />
+      <stop offset="100%" stop-color="#06b6d4" />
+    </linearGradient>
+    <linearGradient id="coinGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24" />
+      <stop offset="100%" stop-color="#f59e0b" />
+    </linearGradient>
+  </defs>
+  <rect x="6" y="14" width="52" height="38" rx="8" fill="url(#walletGrad)" />
+  <path d="M6 24 C6 18 12 14 18 14 L50 14" fill="none" stroke="#818cf8" stroke-width="2" />
+  <rect x="36" y="24" width="22" height="18" rx="4" fill="#1e1b4b" stroke="#818cf8" stroke-width="1.5" />
+  <circle cx="44" cy="33" r="3.5" fill="url(#coinGrad)" />
+  <path d="M14 22 L26 22" stroke="#e0e7ff" stroke-width="2" stroke-linecap="round" />
+</svg>

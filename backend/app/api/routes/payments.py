@@ -1,5 +1,6 @@
 from app.db import database
 from uuid import UUID, uuid4
+import json
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy import select
@@ -449,14 +450,26 @@ def verify_payment(
         razorpay_order_id=payment.provider_order_id,
         status=payment.status,
     )
+
 @webhook_router.post("/webhook")
 def razorpay_webhook(
     payload: bytes,
-    x_razorpay_signature: str = Header(..., alias="X-Razorpay-Signature"),
+    x_razorpay_signature: str = Header(
+        ...,
+        alias="X-Razorpay-Signature",
+    ),
+    x_razorpay_event_id: str | None = Header(
+        None,
+        alias="X-Razorpay-Event-Id",
+    ),
+    db: Session = Depends(get_db),
 ):
-    import hmac
     import hashlib
+    import hmac
 
+    # ---------------------------------------------------------
+    # 1. Verify webhook signature using the RAW request body
+    # ---------------------------------------------------------
     expected_signature = hmac.new(
         settings.RAZORPAY_WEBHOOK_SECRET.encode("utf-8"),
         payload,
@@ -472,6 +485,162 @@ def razorpay_webhook(
             detail="Invalid webhook signature",
         )
 
+    # ---------------------------------------------------------
+    # 2. Parse webhook JSON
+    # ---------------------------------------------------------
+    try:
+        event = json.loads(payload)
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid webhook payload",
+        )
+
+    event_name = event.get("event")
+
+    # We only financially process payment.captured here.
+    if event_name != "payment.captured":
+        return {
+            "status": "ignored",
+            "event": event_name,
+        }
+
+    # ---------------------------------------------------------
+    # 3. Extract Razorpay payment entity
+    # ---------------------------------------------------------
+    try:
+        payment_entity = event["payload"]["payment"]["entity"]
+
+        razorpay_payment_id = payment_entity["id"]
+        razorpay_order_id = payment_entity["order_id"]
+        amount_paise = payment_entity["amount"]
+        currency = payment_entity["currency"]
+        payment_status = payment_entity["status"]
+        captured = payment_entity.get("captured")
+    except (KeyError, TypeError):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid payment webhook payload",
+        )
+
+    # ---------------------------------------------------------
+    # 4. Require an actually captured INR payment
+    # ---------------------------------------------------------
+    if payment_status != "captured" or captured is not True:
+        return {
+            "status": "ignored",
+            "reason": "payment_not_captured",
+        }
+
+    if currency != "INR":
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid payment currency",
+        )
+
+    # ---------------------------------------------------------
+    # 5. Find our internal Payment using our stored order ID
+    # ---------------------------------------------------------
+    payment = db.scalar(
+        select(Payment)
+        .where(
+            Payment.provider_order_id == razorpay_order_id,
+        )
+        .with_for_update()
+    )
+
+    if not payment:
+        # The webhook is valid, but we don't know this order.
+        # Do not create money without an internal Payment record.
+        raise HTTPException(
+            status_code=404,
+            detail="Payment order not found",
+        )
+
+    # ---------------------------------------------------------
+    # 6. Verify amount against our database
+    # ---------------------------------------------------------
+    if payment.amount_paise != amount_paise:
+        raise HTTPException(
+            status_code=400,
+            detail="Payment amount mismatch",
+        )
+
+    # ---------------------------------------------------------
+    # 7. Idempotency
+    # ---------------------------------------------------------
+    # Repeated webhook delivery must never credit the wallet again.
+    if payment.status == "SUCCESS":
+        if payment.provider_payment_id != razorpay_payment_id:
+            raise HTTPException(
+                status_code=409,
+                detail="Payment already completed with a different payment ID",
+            )
+
+        return {
+            "status": "already_processed",
+            "payment_id": str(payment.id),
+            "event_id": x_razorpay_event_id,
+        }
+
+    # ---------------------------------------------------------
+    # 8. Get trip and make sure it is still payable
+    # ---------------------------------------------------------
+    trip = db.scalar(
+        select(Trip).where(Trip.id == payment.trip_id)
+    )
+
+    if not trip:
+        raise HTTPException(
+            status_code=404,
+            detail="Trip not found",
+        )
+
+    if trip.status != "ACTIVE":
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot credit payment for a closed trip",
+        )
+
+    if getattr(trip, "settlement_status", "OPEN") == "SETTLED":
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot credit payment for a settled trip",
+        )
+
+    # ---------------------------------------------------------
+    # 9. Mark payment successful
+    # ---------------------------------------------------------
+    payment.provider_payment_id = razorpay_payment_id
+    payment.status = "SUCCESS"
+
+    # ---------------------------------------------------------
+    # 10. Create contribution + wallet transaction
+    # ---------------------------------------------------------
+    contribution_key = f"payment:{payment.id}"
+
+    try:
+        contribution = create_contribution_from_payment(
+            db,
+            trip=trip,
+            user_id=payment.user_id,
+            amount_paise=payment.amount_paise,
+            idempotency_key=contribution_key,
+            note=f"Razorpay webhook payment {razorpay_payment_id}",
+        )
+
+        payment.contribution_id = contribution.id
+
+        # Everything commits atomically.
+        db.commit()
+
+    except Exception:
+        db.rollback()
+        raise
+
     return {
-        "status": "received",
+        "status": "processed",
+        "payment_id": str(payment.id),
+        "contribution_id": str(contribution.id),
+        "event_id": x_razorpay_event_id,
     }

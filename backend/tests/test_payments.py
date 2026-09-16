@@ -761,3 +761,611 @@ def test_payment_rejects_uncaptured_payment(client, monkeypatch):
         assert contributions == []
     finally:
         db.close()
+
+
+def _sign_payload(payload_bytes: bytes, secret: str = None) -> str:
+    import hashlib
+    import hmac
+    from app.core.config import settings
+
+    key = secret or settings.RAZORPAY_WEBHOOK_SECRET
+    return hmac.new(key.encode("utf-8"), payload_bytes, hashlib.sha256).hexdigest()
+
+
+def _setup_test_order(test_client, monkeypatch, amount_paise=50000, prefix="wh"):
+    import uuid
+
+    email = f"user_{prefix}_{uuid.uuid4().hex[:6]}@example.com"
+    reg = test_client.post(
+        "/auth/register",
+        json={"name": "Webhook User", "email": email, "password": "PassWord123!"},
+    )
+    assert reg.status_code == 201
+
+    login = test_client.post(
+        "/auth/login",
+        json={"email": email, "password": "PassWord123!"},
+    )
+    assert login.status_code == 200
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    trip = test_client.post(
+        "/trips",
+        headers=headers,
+        json={
+            "name": f"Trip {prefix}",
+            "destination": "Goa",
+            "currency": "INR",
+            "start_date": "2026-10-01",
+            "end_date": "2026-10-07",
+        },
+    )
+    assert trip.status_code == 201
+    trip_id = trip.json()["id"]
+
+    order_id = f"order_{prefix}_{uuid.uuid4().hex[:8]}"
+    monkeypatch.setattr(
+        "app.api.routes.payments.create_razorpay_order",
+        lambda amount_paise, receipt: {
+            "id": order_id,
+            "amount": amount_paise,
+            "currency": "INR",
+            "receipt": receipt,
+        },
+    )
+
+    order_res = test_client.post(
+        f"/trips/{trip_id}/payments/order",
+        headers={**headers, "Idempotency-Key": f"KEY-{prefix}-{uuid.uuid4().hex[:6]}"},
+        json={"amount_paise": amount_paise},
+    )
+    assert order_res.status_code == 201
+
+    return trip_id, order_id, headers
+
+
+def test_webhook_valid_payment_captured(client, monkeypatch):
+    import json
+    from app.models.payment import Payment
+    from app.models.contribution import Contribution
+    from app.models.wallet import Wallet
+    from app.models.wallet_transaction import WalletTransaction
+
+    test_client, SessionLocal = client
+    trip_id, order_id, headers = _setup_test_order(test_client, monkeypatch, amount_paise=50000, prefix="valid")
+
+    payment_id = "pay_valid_123"
+    webhook_body = {
+        "event": "payment.captured",
+        "payload": {
+            "payment": {
+                "entity": {
+                    "id": payment_id,
+                    "order_id": order_id,
+                    "amount": 50000,
+                    "currency": "INR",
+                    "status": "captured",
+                    "captured": True,
+                }
+            }
+        },
+    }
+    payload_bytes = json.dumps(webhook_body).encode("utf-8")
+    sig = _sign_payload(payload_bytes)
+
+    res = test_client.post(
+        "/payments/webhook",
+        content=payload_bytes,
+        headers={
+            "Content-Type": "application/json",
+            "X-Razorpay-Signature": sig,
+            "X-Razorpay-Event-Id": "evt_valid_001",
+        },
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "processed"
+    assert data["event_id"] == "evt_valid_001"
+
+    # Verify wallet, contribution, and transactions in DB
+    db = SessionLocal()
+    try:
+        payment = db.scalar(select(Payment).where(Payment.provider_order_id == order_id))
+        assert payment.status == "SUCCESS"
+        assert payment.provider_payment_id == payment_id
+        assert payment.contribution_id is not None
+
+        wallet = db.scalar(select(Wallet).where(Wallet.trip_id == uuid.UUID(trip_id)))
+        assert wallet.balance_paise == 50000
+
+        contrib = db.scalar(select(Contribution).where(Contribution.id == payment.contribution_id))
+        assert contrib.amount_paise == 50000
+        assert contrib.payment_method == "RAZORPAY"
+
+        tx = db.scalar(select(WalletTransaction).where(WalletTransaction.reference_id == contrib.id))
+        assert tx.amount_paise == 50000
+        assert tx.transaction_type == "CONTRIBUTION"
+    finally:
+        db.close()
+
+
+def test_webhook_duplicate_payment_captured(client, monkeypatch):
+    import json
+    from app.models.wallet import Wallet
+    from app.models.contribution import Contribution
+
+    test_client, SessionLocal = client
+    trip_id, order_id, headers = _setup_test_order(test_client, monkeypatch, amount_paise=50000, prefix="dup")
+
+    payment_id = "pay_dup_123"
+    webhook_body = {
+        "event": "payment.captured",
+        "payload": {
+            "payment": {
+                "entity": {
+                    "id": payment_id,
+                    "order_id": order_id,
+                    "amount": 50000,
+                    "currency": "INR",
+                    "status": "captured",
+                    "captured": True,
+                }
+            }
+        },
+    }
+    payload_bytes = json.dumps(webhook_body).encode("utf-8")
+    sig = _sign_payload(payload_bytes)
+
+    # First delivery
+    res1 = test_client.post(
+        "/payments/webhook",
+        content=payload_bytes,
+        headers={"Content-Type": "application/json", "X-Razorpay-Signature": sig},
+    )
+    assert res1.status_code == 200
+    assert res1.json()["status"] == "processed"
+
+    # Second delivery with same signature and payload (no event-id header)
+    res2 = test_client.post(
+        "/payments/webhook",
+        content=payload_bytes,
+        headers={"Content-Type": "application/json", "X-Razorpay-Signature": sig},
+    )
+    assert res2.status_code == 200
+    assert res2.json()["status"] == "already_processed"
+
+    # Verify wallet credited exactly once
+    db = SessionLocal()
+    try:
+        wallet = db.scalar(select(Wallet).where(Wallet.trip_id == uuid.UUID(trip_id)))
+        assert wallet.balance_paise == 50000
+
+        contribs = db.scalars(select(Contribution).where(Contribution.trip_id == uuid.UUID(trip_id))).all()
+        assert len(contribs) == 1
+    finally:
+        db.close()
+
+
+def test_webhook_duplicate_event_id(client, monkeypatch):
+    import json
+    test_client, SessionLocal = client
+    trip_id, order_id, headers = _setup_test_order(test_client, monkeypatch, amount_paise=50000, prefix="evtid")
+
+    payment_id = "pay_evtid_123"
+    webhook_body = {
+        "event": "payment.captured",
+        "payload": {
+            "payment": {
+                "entity": {
+                    "id": payment_id,
+                    "order_id": order_id,
+                    "amount": 50000,
+                    "currency": "INR",
+                    "status": "captured",
+                    "captured": True,
+                }
+            }
+        },
+    }
+    payload_bytes = json.dumps(webhook_body).encode("utf-8")
+    sig = _sign_payload(payload_bytes)
+    event_id = "evt_dedup_unique_999"
+
+    # 1. First delivery
+    res1 = test_client.post(
+        "/payments/webhook",
+        content=payload_bytes,
+        headers={
+            "Content-Type": "application/json",
+            "X-Razorpay-Signature": sig,
+            "X-Razorpay-Event-Id": event_id,
+        },
+    )
+    assert res1.status_code == 200
+    assert res1.json()["status"] == "processed"
+
+    # 2. Second delivery with identical event_id
+    res2 = test_client.post(
+        "/payments/webhook",
+        content=payload_bytes,
+        headers={
+            "Content-Type": "application/json",
+            "X-Razorpay-Signature": sig,
+            "X-Razorpay-Event-Id": event_id,
+        },
+    )
+    assert res2.status_code == 200
+    assert res2.json()["status"] == "already_processed"
+    assert res2.json()["event_id"] == event_id
+
+
+def test_webhook_invalid_signature(client, monkeypatch):
+    import json
+    test_client, SessionLocal = client
+    trip_id, order_id, headers = _setup_test_order(test_client, monkeypatch, prefix="badsig")
+
+    webhook_body = {
+        "event": "payment.captured",
+        "payload": {
+            "payment": {
+                "entity": {
+                    "id": "pay_badsig",
+                    "order_id": order_id,
+                    "amount": 50000,
+                    "currency": "INR",
+                    "status": "captured",
+                    "captured": True,
+                }
+            }
+        },
+    }
+    payload_bytes = json.dumps(webhook_body).encode("utf-8")
+
+    res = test_client.post(
+        "/payments/webhook",
+        content=payload_bytes,
+        headers={
+            "Content-Type": "application/json",
+            "X-Razorpay-Signature": "invalid_hex_signature_here",
+        },
+    )
+    assert res.status_code == 400
+    assert "Invalid webhook signature" in res.json()["detail"]
+
+
+def test_webhook_amount_mismatch(client, monkeypatch):
+    import json
+    from app.models.wallet import Wallet
+
+    test_client, SessionLocal = client
+    trip_id, order_id, headers = _setup_test_order(test_client, monkeypatch, amount_paise=50000, prefix="amt")
+
+    webhook_body = {
+        "event": "payment.captured",
+        "payload": {
+            "payment": {
+                "entity": {
+                    "id": "pay_amt_mismatch",
+                    "order_id": order_id,
+                    "amount": 25000,  # Expected 50000
+                    "currency": "INR",
+                    "status": "captured",
+                    "captured": True,
+                }
+            }
+        },
+    }
+    payload_bytes = json.dumps(webhook_body).encode("utf-8")
+    sig = _sign_payload(payload_bytes)
+
+    res = test_client.post(
+        "/payments/webhook",
+        content=payload_bytes,
+        headers={"Content-Type": "application/json", "X-Razorpay-Signature": sig},
+    )
+    assert res.status_code == 400
+    assert "Payment amount mismatch" in res.json()["detail"]
+
+    db = SessionLocal()
+    try:
+        wallet = db.scalar(select(Wallet).where(Wallet.trip_id == uuid.UUID(trip_id)))
+        assert wallet.balance_paise == 0
+    finally:
+        db.close()
+
+
+def test_webhook_wrong_currency(client, monkeypatch):
+    import json
+    from app.models.wallet import Wallet
+
+    test_client, SessionLocal = client
+    trip_id, order_id, headers = _setup_test_order(test_client, monkeypatch, amount_paise=50000, prefix="curr")
+
+    webhook_body = {
+        "event": "payment.captured",
+        "payload": {
+            "payment": {
+                "entity": {
+                    "id": "pay_curr",
+                    "order_id": order_id,
+                    "amount": 50000,
+                    "currency": "USD",  # Not INR
+                    "status": "captured",
+                    "captured": True,
+                }
+            }
+        },
+    }
+    payload_bytes = json.dumps(webhook_body).encode("utf-8")
+    sig = _sign_payload(payload_bytes)
+
+    res = test_client.post(
+        "/payments/webhook",
+        content=payload_bytes,
+        headers={"Content-Type": "application/json", "X-Razorpay-Signature": sig},
+    )
+    assert res.status_code == 400
+    assert "Invalid payment currency" in res.json()["detail"]
+
+    db = SessionLocal()
+    try:
+        wallet = db.scalar(select(Wallet).where(Wallet.trip_id == uuid.UUID(trip_id)))
+        assert wallet.balance_paise == 0
+    finally:
+        db.close()
+
+
+def test_webhook_unknown_order(client, monkeypatch):
+    import json
+    test_client, SessionLocal = client
+
+    webhook_body = {
+        "event": "payment.captured",
+        "payload": {
+            "payment": {
+                "entity": {
+                    "id": "pay_unknown_123",
+                    "order_id": "order_non_existent_99999",
+                    "amount": 50000,
+                    "currency": "INR",
+                    "status": "captured",
+                    "captured": True,
+                }
+            }
+        },
+    }
+    payload_bytes = json.dumps(webhook_body).encode("utf-8")
+    sig = _sign_payload(payload_bytes)
+
+    res = test_client.post(
+        "/payments/webhook",
+        content=payload_bytes,
+        headers={"Content-Type": "application/json", "X-Razorpay-Signature": sig},
+    )
+    assert res.status_code == 404
+    assert "Payment order not found" in res.json()["detail"]
+
+
+def test_webhook_payment_failed(client, monkeypatch):
+    import json
+    from app.models.payment import Payment
+    from app.models.wallet import Wallet
+    from app.models.contribution import Contribution
+
+    test_client, SessionLocal = client
+    trip_id, order_id, headers = _setup_test_order(test_client, monkeypatch, amount_paise=50000, prefix="failed")
+
+    payment_id = "pay_failed_456"
+    webhook_body = {
+        "event": "payment.failed",
+        "payload": {
+            "payment": {
+                "entity": {
+                    "id": payment_id,
+                    "order_id": order_id,
+                    "amount": 50000,
+                    "currency": "INR",
+                    "status": "failed",
+                }
+            }
+        },
+    }
+    payload_bytes = json.dumps(webhook_body).encode("utf-8")
+    sig = _sign_payload(payload_bytes)
+
+    res = test_client.post(
+        "/payments/webhook",
+        content=payload_bytes,
+        headers={
+            "Content-Type": "application/json",
+            "X-Razorpay-Signature": sig,
+            "X-Razorpay-Event-Id": "evt_failed_001",
+        },
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "recorded"
+    assert data["event"] == "payment.failed"
+
+    # Wallet and contributions must NOT be modified
+    db = SessionLocal()
+    try:
+        payment = db.scalar(select(Payment).where(Payment.provider_order_id == order_id))
+        assert payment.status == "FAILED"
+        assert payment.provider_payment_id == payment_id
+        assert payment.contribution_id is None
+
+        wallet = db.scalar(select(Wallet).where(Wallet.trip_id == uuid.UUID(trip_id)))
+        assert wallet.balance_paise == 0
+
+        contribs = db.scalars(select(Contribution).where(Contribution.trip_id == uuid.UUID(trip_id))).all()
+        assert len(contribs) == 0
+    finally:
+        db.close()
+
+
+def test_webhook_already_successful_payment(client, monkeypatch):
+    import json
+    from app.models.wallet import Wallet
+
+    test_client, SessionLocal = client
+    trip_id, order_id, headers = _setup_test_order(test_client, monkeypatch, amount_paise=50000, prefix="alreadysuccess")
+
+    payment_id = "pay_first_verify_123"
+
+    # 1. Client verifies successfully first via /verify
+    monkeypatch.setattr(
+        "app.api.routes.payments.verify_razorpay_payment_signature",
+        lambda order_id, payment_id, signature, **kw: True,
+    )
+    monkeypatch.setattr(
+        "app.api.routes.payments.fetch_razorpay_payment",
+        lambda payment_id, **kw: {
+            "id": payment_id,
+            "order_id": order_id,
+            "amount": 50000,
+            "currency": "INR",
+            "status": "captured",
+            "captured": True,
+        },
+    )
+
+    v_res = test_client.post(
+        f"/trips/{trip_id}/payments/verify",
+        headers=headers,
+        json={
+            "razorpay_payment_id": payment_id,
+            "razorpay_order_id": order_id,
+            "razorpay_signature": "client_sig",
+        },
+    )
+    assert v_res.status_code == 200
+    assert v_res.json()["status"] == "SUCCESS"
+
+    # 2. Later, Razorpay webhook arrives with payment.captured
+    webhook_body = {
+        "event": "payment.captured",
+        "payload": {
+            "payment": {
+                "entity": {
+                    "id": payment_id,
+                    "order_id": order_id,
+                    "amount": 50000,
+                    "currency": "INR",
+                    "status": "captured",
+                    "captured": True,
+                }
+            }
+        },
+    }
+    payload_bytes = json.dumps(webhook_body).encode("utf-8")
+    sig = _sign_payload(payload_bytes)
+
+    wh_res = test_client.post(
+        "/payments/webhook",
+        content=payload_bytes,
+        headers={"Content-Type": "application/json", "X-Razorpay-Signature": sig},
+    )
+    assert wh_res.status_code == 200
+    assert wh_res.json()["status"] == "already_processed"
+
+    # 3. Wallet must be exactly 50,000 paise (never double credited)
+    db = SessionLocal()
+    try:
+        wallet = db.scalar(select(Wallet).where(Wallet.trip_id == uuid.UUID(trip_id)))
+        assert wallet.balance_paise == 50000
+    finally:
+        db.close()
+
+
+def test_webhook_closed_trip(client, monkeypatch):
+    import json
+    from app.models.wallet import Wallet
+    from app.models.trip import Trip
+
+    test_client, SessionLocal = client
+    trip_id, order_id, headers = _setup_test_order(test_client, monkeypatch, amount_paise=50000, prefix="closed")
+
+    # Close the trip
+    close_res = test_client.post(f"/trips/{trip_id}/close", headers=headers)
+    assert close_res.status_code == 200
+    assert close_res.json()["status"] == "CLOSED"
+
+    webhook_body = {
+        "event": "payment.captured",
+        "payload": {
+            "payment": {
+                "entity": {
+                    "id": "pay_closed_trip",
+                    "order_id": order_id,
+                    "amount": 50000,
+                    "currency": "INR",
+                    "status": "captured",
+                    "captured": True,
+                }
+            }
+        },
+    }
+    payload_bytes = json.dumps(webhook_body).encode("utf-8")
+    sig = _sign_payload(payload_bytes)
+
+    res = test_client.post(
+        "/payments/webhook",
+        content=payload_bytes,
+        headers={"Content-Type": "application/json", "X-Razorpay-Signature": sig},
+    )
+    assert res.status_code == 400
+    assert "closed" in res.json()["detail"].lower()
+
+    db = SessionLocal()
+    try:
+        wallet = db.scalar(select(Wallet).where(Wallet.trip_id == uuid.UUID(trip_id)))
+        assert wallet.balance_paise == 0
+    finally:
+        db.close()
+
+
+def test_webhook_settled_trip(client, monkeypatch):
+    import json
+    from app.models.wallet import Wallet
+    from app.models.trip import Trip
+
+    test_client, SessionLocal = client
+    trip_id, order_id, headers = _setup_test_order(test_client, monkeypatch, amount_paise=50000, prefix="settled")
+
+    # Mark trip settled
+    settle_res = test_client.post(f"/trips/{trip_id}/settlement/complete", headers=headers)
+    assert settle_res.status_code == 200
+
+    webhook_body = {
+        "event": "payment.captured",
+        "payload": {
+            "payment": {
+                "entity": {
+                    "id": "pay_settled_trip",
+                    "order_id": order_id,
+                    "amount": 50000,
+                    "currency": "INR",
+                    "status": "captured",
+                    "captured": True,
+                }
+            }
+        },
+    }
+    payload_bytes = json.dumps(webhook_body).encode("utf-8")
+    sig = _sign_payload(payload_bytes)
+
+    res = test_client.post(
+        "/payments/webhook",
+        content=payload_bytes,
+        headers={"Content-Type": "application/json", "X-Razorpay-Signature": sig},
+    )
+    assert res.status_code == 400
+    assert "settled" in res.json()["detail"].lower()
+
+    db = SessionLocal()
+    try:
+        wallet = db.scalar(select(Wallet).where(Wallet.trip_id == uuid.UUID(trip_id)))
+        assert wallet.balance_paise == 0
+    finally:
+        db.close()

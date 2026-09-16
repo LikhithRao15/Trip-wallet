@@ -203,3 +203,61 @@ The backend supports two complementary channels for final settlement:
    - For `payment.failed`, transitions internal Payment status to `FAILED` without touching the wallet balance.
    - Enforces active, unsettled trip status and strict INR currency validation.
 
+---
+
+## 10. Automated Refunds, Reconciliation & Hardening
+
+### 1. Automated Razorpay Refunds (`POST /trips/{trip_id}/payments/{payment_id}/refund`)
+- **Server-Side Authorization:** Only the trip administrator or original payer can request a refund.
+- **Financial Balance Guard:** Requires `wallet.balance_paise >= payment.amount_paise`. If trip members have already spent the contributed funds on expenses, the refund is rejected with HTTP 400 to prevent a negative or mathematically inconsistent ledger.
+- **Atomic Execution:**
+  1. Calls Razorpay Refund API (`create_razorpay_refund`).
+  2. Inserts `PaymentRefund` record (`payment_refunds` table).
+  3. Updates `Payment.status = "REFUNDED"`.
+  4. Inserts compensating `WalletTransaction` with `transaction_type="REFUND"` and reference to refund.
+  5. Atomically deducts `wallet.balance_paise -= payment.amount_paise` with row-level locks.
+  6. Records trip activity and non-sensitive payment audit log.
+- **Webhook Ingestion:** Also listens for asynchronous `refund.processed` / `payment.refunded` webhooks for idempotency.
+
+### 2. Payment Reconciliation (`POST /trips/{trip_id}/payments/reconcile` and `/{payment_id}/reconcile`)
+- Identifies `CREATED` or `PENDING` payment records that remained unresolved due to client drops or network interruptions.
+- Authoritatively queries Razorpay API for payments matching the order.
+- **Captured payment found:** Marks `SUCCESS`, creates `Contribution`, and credits the wallet atomically (zero double credits).
+- **Failed payment found:** Marks `FAILED`.
+- **Expired order (> 30 mins):** Transitions status to `CANCELLED`.
+
+### 3. Payment State Machine
+```
+   ┌─────────┐
+   │ CREATED │ ──(checkout attempt)──► ┌─────────┐
+   └────┬────┘                         │ PENDING │
+        │                              └────┬────┘
+        │ (no payment / expired)            │
+        ▼                                   ▼
+   ┌───────────┐                      ┌───────────┐
+   │ CANCELLED │                      │  SUCCESS  │ ──(refund)──► ┌──────────┐
+   └───────────┘                      └─────┬─────┘               │ REFUNDED │
+                                            │                     └──────────┘
+                                            ▼
+                                      ┌───────────┐
+                                      │  FAILED   │
+                                      └───────────┘
+```
+
+### 4. Rate Limiting & Abuse Prevention
+In-memory sliding window rate limiting protects key payment endpoints:
+- `POST /trips/{trip_id}/payments/order`: 10 req / minute / user-IP.
+- `POST /trips/{trip_id}/payments/verify`: 15 req / minute / user-IP.
+- `POST /payments/webhook`: 60 req / minute / IP.
+- Returns HTTP 429 with `Retry-After: 60` on threshold breach.
+
+### 5. Sanitized Audit Logging
+- Structured logging via `log_payment_audit` in `app/core/audit_logger.py`.
+- Masks IDs (e.g. `order_***4f12`, `pay_***8b92`).
+- Never logs keys, secrets, authorization headers, or payment credentials.
+
+### 6. Flutter Mobile UI
+- **Online Payment Screen:** Responsive states (Pending, Verifying, Success, Failed with clear error message, and one-tap retry).
+- **Payment History Screen:** Full list of online payments with color-coded status chips, on-demand payment reconciliation triggers, and refund execution for admins/payers.
+
+

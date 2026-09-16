@@ -72,4 +72,66 @@ class PaymentService {
       Map<String, dynamic>.from(response),
     );
   }
+
+  /// Fetches payment history for the trip.
+  Future<List<PaymentHistoryItem>> getPayments(
+    String tripId, {
+    String? status,
+  }) async {
+    final token = await _getToken();
+    final queryParams = <String, String>{};
+    if (status != null && status.isNotEmpty) {
+      queryParams['status'] = status;
+    }
+
+    final uri = Uri.parse('${ApiConstants.trips}/$tripId/payments').replace(
+      queryParameters: queryParams.isNotEmpty ? queryParams : null,
+    );
+
+    final response = await _apiClient.get(
+      uri.toString(),
+      token: token,
+    );
+
+    final data = Map<String, dynamic>.from(response);
+    final items = data['items'] as List? ?? [];
+    return items
+        .map((item) => PaymentHistoryItem.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+  }
+
+  /// Requests a server-side refund for a completed payment.
+  Future<PaymentRefundResult> refundPayment({
+    required String tripId,
+    required String paymentId,
+    String? reason,
+  }) async {
+    final token = await _getToken();
+
+    final response = await _apiClient.post(
+      '${ApiConstants.trips}/$tripId/payments/$paymentId/refund',
+      {
+        'reason': reason,
+      },
+      token: token,
+    );
+
+    return PaymentRefundResult.fromJson(Map<String, dynamic>.from(response));
+  }
+
+  /// Reconciles an unresolved payment with Razorpay.
+  Future<PaymentReconcileResult> reconcilePayment({
+    required String tripId,
+    required String paymentId,
+  }) async {
+    final token = await _getToken();
+
+    final response = await _apiClient.post(
+      '${ApiConstants.trips}/$tripId/payments/$paymentId/reconcile',
+      {},
+      token: token,
+    );
+
+    return PaymentReconcileResult.fromJson(Map<String, dynamic>.from(response));
+  }
 }

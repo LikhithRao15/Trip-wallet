@@ -1369,3 +1369,289 @@ def test_webhook_settled_trip(client, monkeypatch):
         assert wallet.balance_paise == 0
     finally:
         db.close()
+
+
+def test_payment_history_listing(client, monkeypatch):
+    test_client, SessionLocal = client
+    trip_id, order_id, headers = _setup_test_order(test_client, monkeypatch, amount_paise=25000, prefix="hist")
+
+    res = test_client.get(f"/trips/{trip_id}/payments", headers=headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["total"] >= 1
+    assert any(item["provider_order_id"] == order_id for item in data["items"])
+
+
+def test_payment_refund_success(client, monkeypatch):
+    from app.models.wallet import Wallet
+    from app.models.payment import Payment
+    from app.models.payment_refund import PaymentRefund
+    from app.models.wallet_transaction import WalletTransaction
+
+    test_client, SessionLocal = client
+    trip_id, order_id, headers = _setup_test_order(test_client, monkeypatch, amount_paise=50000, prefix="rfnd")
+
+    payment_id = "pay_rfnd_123"
+    # Verify payment first to get it into SUCCESS status
+    monkeypatch.setattr(
+        "app.api.routes.payments.verify_razorpay_payment_signature",
+        lambda order_id, payment_id, signature, **kw: True,
+    )
+    monkeypatch.setattr(
+        "app.api.routes.payments.fetch_razorpay_payment",
+        lambda p_id, **kw: {
+            "id": payment_id,
+            "order_id": order_id,
+            "amount": 50000,
+            "currency": "INR",
+            "status": "captured",
+            "captured": True,
+        },
+    )
+
+    v_res = test_client.post(
+        f"/trips/{trip_id}/payments/verify",
+        headers=headers,
+        json={
+            "razorpay_payment_id": payment_id,
+            "razorpay_order_id": order_id,
+            "razorpay_signature": "valid_sig",
+        },
+    )
+    assert v_res.status_code == 200
+    internal_payment_id = v_res.json()["payment_id"]
+
+    # Verify wallet has 50000 paise
+    db = SessionLocal()
+    try:
+        w = db.scalar(select(Wallet).where(Wallet.trip_id == uuid.UUID(trip_id)))
+        assert w.balance_paise == 50000
+    finally:
+        db.close()
+
+    # Mock Razorpay refund API
+    mock_refund_id = "rfnd_test_abc123"
+    monkeypatch.setattr(
+        "app.api.routes.payments.create_razorpay_refund",
+        lambda payment_id, amount_paise, reason=None: {
+            "id": mock_refund_id,
+            "amount": amount_paise,
+            "currency": "INR",
+            "status": "processed",
+        },
+    )
+
+    # Trigger Refund
+    rfnd_res = test_client.post(
+        f"/trips/{trip_id}/payments/{internal_payment_id}/refund",
+        headers=headers,
+        json={"reason": "User requested cancellation"},
+    )
+    assert rfnd_res.status_code == 200
+    rfnd_data = rfnd_res.json()
+    assert rfnd_data["razorpay_refund_id"] == mock_refund_id
+    assert rfnd_data["amount_paise"] == 50000
+    assert rfnd_data["status"] == "PROCESSED"
+
+    # Verify DB state: wallet debited, transaction logged, status REFUNDED
+    db = SessionLocal()
+    try:
+        w = db.scalar(select(Wallet).where(Wallet.trip_id == uuid.UUID(trip_id)))
+        assert w.balance_paise == 0
+
+        p = db.scalar(select(Payment).where(Payment.id == uuid.UUID(internal_payment_id)))
+        assert p.status == "REFUNDED"
+
+        r = db.scalar(select(PaymentRefund).where(PaymentRefund.payment_id == uuid.UUID(internal_payment_id)))
+        assert r is not None
+        assert r.provider_refund_id == mock_refund_id
+
+        tx = db.scalar(
+            select(WalletTransaction)
+            .where(
+                WalletTransaction.wallet_id == w.id,
+                WalletTransaction.transaction_type == "REFUND",
+            )
+        )
+        assert tx is not None
+        assert tx.amount_paise == 50000
+    finally:
+        db.close()
+
+
+def test_payment_refund_insufficient_wallet_balance(client, monkeypatch):
+    from app.models.wallet import Wallet
+
+    test_client, SessionLocal = client
+    trip_id, order_id, headers = _setup_test_order(test_client, monkeypatch, amount_paise=50000, prefix="insuf")
+
+    payment_id = "pay_insuf_123"
+    monkeypatch.setattr(
+        "app.api.routes.payments.verify_razorpay_payment_signature",
+        lambda order_id, payment_id, signature, **kw: True,
+    )
+    monkeypatch.setattr(
+        "app.api.routes.payments.fetch_razorpay_payment",
+        lambda p_id, **kw: {
+            "id": payment_id,
+            "order_id": order_id,
+            "amount": 50000,
+            "currency": "INR",
+            "status": "captured",
+            "captured": True,
+        },
+    )
+
+    v_res = test_client.post(
+        f"/trips/{trip_id}/payments/verify",
+        headers=headers,
+        json={
+            "razorpay_payment_id": payment_id,
+            "razorpay_order_id": order_id,
+            "razorpay_signature": "valid_sig",
+        },
+    )
+    assert v_res.status_code == 200
+    internal_payment_id = v_res.json()["payment_id"]
+
+    # Artificially spend down the wallet (e.g. expenses reduced balance to 20000 paise)
+    db = SessionLocal()
+    try:
+        w = db.scalar(select(Wallet).where(Wallet.trip_id == uuid.UUID(trip_id)))
+        w.balance_paise = 20000
+        db.commit()
+    finally:
+        db.close()
+
+    # Attempting refund of 50000 when only 20000 is available must be rejected
+    rfnd_res = test_client.post(
+        f"/trips/{trip_id}/payments/{internal_payment_id}/refund",
+        headers=headers,
+        json={"reason": "Test insufficient"},
+    )
+    assert rfnd_res.status_code == 400
+    assert "insufficient wallet balance" in rfnd_res.json()["detail"].lower()
+
+
+def test_payment_refund_duplicate_rejected(client, monkeypatch):
+    test_client, SessionLocal = client
+    trip_id, order_id, headers = _setup_test_order(test_client, monkeypatch, amount_paise=30000, prefix="duprfnd")
+
+    payment_id = "pay_duprfnd_123"
+    monkeypatch.setattr(
+        "app.api.routes.payments.verify_razorpay_payment_signature",
+        lambda order_id, payment_id, signature, **kw: True,
+    )
+    monkeypatch.setattr(
+        "app.api.routes.payments.fetch_razorpay_payment",
+        lambda p_id, **kw: {
+            "id": payment_id,
+            "order_id": order_id,
+            "amount": 30000,
+            "currency": "INR",
+            "status": "captured",
+            "captured": True,
+        },
+    )
+    v_res = test_client.post(
+        f"/trips/{trip_id}/payments/verify",
+        headers=headers,
+        json={
+            "razorpay_payment_id": payment_id,
+            "razorpay_order_id": order_id,
+            "razorpay_signature": "valid_sig",
+        },
+    )
+    internal_payment_id = v_res.json()["payment_id"]
+
+    monkeypatch.setattr(
+        "app.api.routes.payments.create_razorpay_refund",
+        lambda payment_id, amount_paise, reason=None: {"id": "rfnd_first", "amount": amount_paise},
+    )
+    rfnd_1 = test_client.post(
+        f"/trips/{trip_id}/payments/{internal_payment_id}/refund",
+        headers=headers,
+        json={},
+    )
+    assert rfnd_1.status_code == 200
+
+    # Second refund attempt must return 409
+    rfnd_2 = test_client.post(
+        f"/trips/{trip_id}/payments/{internal_payment_id}/refund",
+        headers=headers,
+        json={},
+    )
+    assert rfnd_2.status_code == 409
+    assert "already been refunded" in rfnd_2.json()["detail"].lower()
+
+
+def test_payment_reconciliation_captured(client, monkeypatch):
+    from app.models.wallet import Wallet
+    from app.models.payment import Payment
+
+    test_client, SessionLocal = client
+    trip_id, order_id, headers = _setup_test_order(test_client, monkeypatch, amount_paise=40000, prefix="reconcile")
+
+    # Order is in CREATED state. Gateway has captured payment:
+    captured_payment_id = "pay_reconciled_captured"
+    monkeypatch.setattr(
+        "app.api.routes.payments.fetch_razorpay_order_payments",
+        lambda o_id: [
+            {
+                "id": captured_payment_id,
+                "order_id": order_id,
+                "amount": 40000,
+                "currency": "INR",
+                "status": "captured",
+                "captured": True,
+            }
+        ],
+    )
+
+    db = SessionLocal()
+    try:
+        p = db.scalar(select(Payment).where(Payment.provider_order_id == order_id))
+        internal_payment_id = str(p.id)
+    finally:
+        db.close()
+
+    rec_res = test_client.post(
+        f"/trips/{trip_id}/payments/{internal_payment_id}/reconcile",
+        headers=headers,
+    )
+    assert rec_res.status_code == 200
+    rec_data = rec_res.json()
+    assert rec_data["reconciled"] is True
+    assert rec_data["current_status"] == "SUCCESS"
+
+    # Wallet must be credited
+    db = SessionLocal()
+    try:
+        w = db.scalar(select(Wallet).where(Wallet.trip_id == uuid.UUID(trip_id)))
+        assert w.balance_paise == 40000
+    finally:
+        db.close()
+
+
+def test_payment_rate_limiting(client, monkeypatch):
+    from app.core.rate_limiter import limiter
+    limiter.reset()
+
+    test_client, SessionLocal = client
+    trip_id, order_id, headers = _setup_test_order(test_client, monkeypatch, amount_paise=10000, prefix="rl")
+
+    # Exceed limit on /order (limit is 10 per minute per IP)
+    hit_rate_limit = False
+    for i in range(15):
+        r = test_client.post(
+            f"/trips/{trip_id}/payments/order",
+            headers={**headers, "Idempotency-Key": f"RL-KEY-{i}"},
+            json={"amount_paise": 10000},
+        )
+        if r.status_code == 429:
+            hit_rate_limit = True
+            assert "Retry-After" in r.headers
+            break
+
+    assert hit_rate_limit is True
+    limiter.reset()

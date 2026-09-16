@@ -7,6 +7,7 @@ import '../../services/wallet_service.dart';
 import 'add_contribution_screen.dart';
 import 'contribution_history_screen.dart';
 import 'online_payment_screen.dart';
+import 'payment_history_screen.dart';
 import 'wallet_transactions_screen.dart';
 import '../expenses/pay_expense_screen.dart';
 
@@ -149,6 +150,24 @@ Future<void> _openPayExpense() async {
                   },
             icon: const Icon(Icons.history),
             tooltip: 'Contribution History',
+          ),
+          IconButton(
+            onPressed: _isLoading
+                ? null
+                : () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PaymentHistoryScreen(
+                          trip: widget.trip,
+                        ),
+                      ),
+                    ).then((_) {
+                      if (mounted) _loadWallet();
+                    });
+                  },
+            icon: const Icon(Icons.receipt_outlined),
+            tooltip: 'Payment History',
           ),
           if (widget.trip.status != 'CLOSED')
             IconButton(

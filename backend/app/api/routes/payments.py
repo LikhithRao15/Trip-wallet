@@ -1,27 +1,46 @@
 from app.db import database
 from uuid import UUID, uuid4
+import datetime as dt
 import json
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
+from app.core.audit_logger import log_payment_audit
 from app.core.config import settings
+from app.core.rate_limiter import rate_limit
 from app.db.database import get_db
 from app.models.payment import Payment
+from app.models.payment_refund import PaymentRefund
 from app.models.payment_webhook_event import PaymentWebhookEvent
 from app.models.trip import Trip
 from app.models.trip_member import TripMember
 from app.models.user import User
-from app.schemas.payment import PaymentOrderCreate, PaymentOrderResponse,PaymentVerifyRequest,PaymentVerifyResponse
+from app.models.wallet import Wallet
+from app.models.wallet_transaction import WalletTransaction
+from app.schemas.payment import (
+    PaymentListItemResponse,
+    PaymentListResponse,
+    PaymentOrderCreate,
+    PaymentOrderResponse,
+    PaymentReconcileResponse,
+    PaymentRefundRequest,
+    PaymentRefundResponse,
+    PaymentVerifyRequest,
+    PaymentVerifyResponse,
+)
+from app.services.activity_service import record_activity
+from app.services.contribution_service import create_contribution_from_payment
 from app.services.idempotency import create_request_hash
 from app.services.payment_service import (
     create_razorpay_order,
+    create_razorpay_refund,
+    fetch_razorpay_order_payments,
     fetch_razorpay_payment,
     verify_razorpay_payment_signature,
 )
-from app.services.contribution_service import create_contribution_from_payment
 
 
 router = APIRouter(
@@ -38,6 +57,7 @@ webhook_router = APIRouter(
     "/order",
     response_model=PaymentOrderResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limit(max_requests=10, window_seconds=60))],
 )
 def create_payment_order(
     trip_id: UUID,
@@ -215,6 +235,7 @@ def create_payment_order(
 @router.post(
     "/verify",
     response_model=PaymentVerifyResponse,
+    dependencies=[Depends(rate_limit(max_requests=15, window_seconds=60))],
 )
 def verify_payment(
     trip_id: UUID,
@@ -452,7 +473,374 @@ def verify_payment(
         status=payment.status,
     )
 
-@webhook_router.post("/webhook")
+# ---------------------------------------------------------
+# Payment History / Listing
+# ---------------------------------------------------------
+@router.get(
+    "",
+    response_model=PaymentListResponse,
+)
+def list_payments(
+    trip_id: UUID,
+    status_filter: str | None = Query(None, alias="status"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    trip = db.scalar(select(Trip).where(Trip.id == trip_id))
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    member = db.scalar(
+        select(TripMember).where(
+            TripMember.trip_id == trip_id,
+            TripMember.user_id == current_user.id,
+            TripMember.status == "ACTIVE",
+        )
+    )
+    if not member:
+        raise HTTPException(status_code=403, detail="You are not an active member of this trip")
+
+    query = (
+        select(Payment, User.name)
+        .join(User, Payment.user_id == User.id)
+        .where(Payment.trip_id == trip_id)
+    )
+
+    # Members see only their payments; Trip Admin can see all payments for the trip
+    if current_user.id != trip.admin_id:
+        query = query.where(Payment.user_id == current_user.id)
+
+    if status_filter and status_filter.strip():
+        query = query.where(Payment.status == status_filter.strip().upper())
+
+    query = query.order_by(Payment.created_at.desc())
+    results = db.execute(query).all()
+
+    items = [
+        PaymentListItemResponse(
+            id=p.id,
+            trip_id=p.trip_id,
+            user_id=p.user_id,
+            user_name=user_name,
+            amount_paise=p.amount_paise,
+            provider=p.provider,
+            provider_order_id=p.provider_order_id,
+            provider_payment_id=p.provider_payment_id,
+            status=p.status,
+            created_at=p.created_at,
+        )
+        for p, user_name in results
+    ]
+
+    return PaymentListResponse(items=items, total=len(items))
+
+
+# ---------------------------------------------------------
+# Automated Razorpay Refund Support
+# ---------------------------------------------------------
+@router.post(
+    "/{payment_id}/refund",
+    response_model=PaymentRefundResponse,
+    status_code=status.HTTP_200_OK,
+)
+def refund_payment(
+    trip_id: UUID,
+    payment_id: UUID,
+    data: PaymentRefundRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    trip = db.scalar(select(Trip).where(Trip.id == trip_id))
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    if trip.status != "ACTIVE":
+        raise HTTPException(status_code=400, detail="Cannot process refund on a closed trip")
+    if getattr(trip, "settlement_status", "OPEN") == "SETTLED":
+        raise HTTPException(status_code=400, detail="Cannot process refund on a settled trip")
+
+    payment = db.scalar(
+        select(Payment)
+        .where(Payment.id == payment_id, Payment.trip_id == trip_id)
+        .with_for_update()
+    )
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment record not found")
+
+    # Only Trip Admin or Original Payer can request refund
+    if current_user.id != trip.admin_id and current_user.id != payment.user_id:
+        raise HTTPException(status_code=403, detail="You do not have permission to refund this payment")
+
+    if payment.status == "REFUNDED":
+        raise HTTPException(status_code=409, detail="Payment has already been refunded")
+
+    if payment.status != "SUCCESS":
+        raise HTTPException(status_code=400, detail="Only successful payments can be refunded")
+
+    if not payment.provider_payment_id:
+        raise HTTPException(status_code=400, detail="Payment has no provider payment ID to refund")
+
+    wallet = db.scalar(
+        select(Wallet).where(Wallet.trip_id == trip_id).with_for_update()
+    )
+    if not wallet:
+        raise HTTPException(status_code=404, detail="Wallet not found")
+
+    if wallet.balance_paise < payment.amount_paise:
+        raise HTTPException(
+            status_code=400,
+            detail="Insufficient wallet balance to process refund. Funds may have already been spent on expenses.",
+        )
+
+    # 1. Server-side call to Razorpay Refund API
+    try:
+        rzp_refund = create_razorpay_refund(
+            payment_id=payment.provider_payment_id,
+            amount_paise=payment.amount_paise,
+            reason=data.reason,
+        )
+        provider_refund_id = rzp_refund.get("id") or f"rfnd_{uuid4().hex[:8]}"
+    except Exception as e:
+        log_payment_audit(
+            action="REFUND_FAILED",
+            trip_id=trip_id,
+            user_id=current_user.id,
+            payment_id=payment.id,
+            provider_payment_id=payment.provider_payment_id,
+            amount_paise=payment.amount_paise,
+            status="FAILED",
+            detail=str(e),
+        )
+        raise HTTPException(
+            status_code=502,
+            detail=f"Razorpay refund failed: {str(e)}",
+        )
+
+    # 2. Atomic database update
+    try:
+        refund_record = PaymentRefund(
+            payment_id=payment.id,
+            trip_id=trip_id,
+            user_id=payment.user_id,
+            provider_refund_id=provider_refund_id,
+            amount_paise=payment.amount_paise,
+            status="PROCESSED",
+            reason=data.reason,
+            created_by=current_user.id,
+        )
+        db.add(refund_record)
+
+        payment.status = "REFUNDED"
+
+        wallet_tx = WalletTransaction(
+            wallet_id=wallet.id,
+            transaction_type="REFUND",
+            amount_paise=payment.amount_paise,
+            reference_type="REFUND",
+            reference_id=refund_record.id,
+            description=f"Refund for online payment {payment.provider_payment_id}",
+            created_by=current_user.id,
+        )
+        db.add(wallet_tx)
+
+        wallet.balance_paise -= payment.amount_paise
+
+        db.commit()
+        db.refresh(refund_record)
+
+        log_payment_audit(
+            action="REFUND_SUCCESS",
+            trip_id=trip_id,
+            user_id=current_user.id,
+            payment_id=payment.id,
+            provider_payment_id=payment.provider_payment_id,
+            provider_refund_id=provider_refund_id,
+            amount_paise=payment.amount_paise,
+            status="SUCCESS",
+        )
+
+        record_activity(
+            db=db,
+            trip_id=trip_id,
+            actor_user_id=current_user.id,
+            event_type="PAYMENT_REFUNDED",
+            entity_type="PAYMENT",
+            entity_id=payment.id,
+            message=f"Refund of ₹{payment.amount_paise / 100:.2f} processed",
+        )
+
+        return PaymentRefundResponse(
+            refund_id=refund_record.id,
+            payment_id=payment.id,
+            razorpay_refund_id=provider_refund_id,
+            amount_paise=payment.amount_paise,
+            status=refund_record.status,
+            created_at=refund_record.created_at,
+        )
+    except Exception:
+        db.rollback()
+        raise
+
+
+# ---------------------------------------------------------
+# Payment Reconciliation Helpers & Endpoints
+# ---------------------------------------------------------
+def _reconcile_single_payment_record(
+    payment: Payment,
+    trip: Trip,
+    db: Session,
+) -> tuple[bool, str]:
+    if payment.status in ("SUCCESS", "REFUNDED"):
+        return False, f"Payment is already in terminal status {payment.status}"
+
+    try:
+        attempts = fetch_razorpay_order_payments(payment.provider_order_id)
+    except Exception as e:
+        return False, f"Failed to query Razorpay for order: {str(e)}"
+
+    # Check if there is a captured payment
+    captured_payment = None
+    for item in attempts:
+        if item.get("status") == "captured" and item.get("captured") is True:
+            captured_payment = item
+            break
+
+    if captured_payment:
+        # Validate currency & amount
+        if captured_payment.get("currency") != "INR" or captured_payment.get("amount") != payment.amount_paise:
+            return False, "Amount or currency mismatch on captured payment"
+
+        if trip.status != "ACTIVE" or getattr(trip, "settlement_status", "OPEN") == "SETTLED":
+            return False, "Cannot credit payment to closed or settled trip"
+
+        contribution = create_contribution_from_payment(
+            db=db,
+            trip=trip,
+            user_id=payment.user_id,
+            amount_paise=payment.amount_paise,
+            idempotency_key=payment.idempotency_key,
+            note=f"Razorpay payment {captured_payment['id']} (reconciled)",
+        )
+        payment.status = "SUCCESS"
+        payment.provider_payment_id = captured_payment["id"]
+        payment.contribution_id = contribution.id
+        db.commit()
+        db.refresh(payment)
+
+        log_payment_audit(
+            action="PAYMENT_RECONCILED",
+            trip_id=trip.id,
+            user_id=payment.user_id,
+            payment_id=payment.id,
+            provider_order_id=payment.provider_order_id,
+            provider_payment_id=payment.provider_payment_id,
+            amount_paise=payment.amount_paise,
+            status="SUCCESS",
+            detail="Reconciled captured payment from gateway",
+        )
+        return True, "Payment captured and credited to wallet"
+
+    # If all attempts failed
+    all_failed = len(attempts) > 0 and all(item.get("status") == "failed" for item in attempts)
+    if all_failed:
+        payment.status = "FAILED"
+        db.commit()
+        return True, "Payment marked as FAILED based on gateway attempts"
+
+    # If older than 30 minutes with no attempts, mark CANCELLED
+    now_utc = dt.datetime.now(dt.timezone.utc)
+    created_at = payment.created_at
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=dt.timezone.utc)
+    if (now_utc - created_at).total_seconds() > 1800:
+        payment.status = "CANCELLED"
+        db.commit()
+        return True, "Order expired (>30m) without successful payment; marked CANCELLED"
+
+    return False, "Payment order remains in CREATED state awaiting user action"
+
+
+@router.post(
+    "/{payment_id}/reconcile",
+    response_model=PaymentReconcileResponse,
+)
+def reconcile_single_payment(
+    trip_id: UUID,
+    payment_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    trip = db.scalar(select(Trip).where(Trip.id == trip_id))
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    payment = db.scalar(
+        select(Payment)
+        .where(Payment.id == payment_id, Payment.trip_id == trip_id)
+        .with_for_update()
+    )
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment record not found")
+
+    previous_status = payment.status
+    reconciled, detail = _reconcile_single_payment_record(payment, trip, db)
+
+    return PaymentReconcileResponse(
+        payment_id=payment.id,
+        provider_order_id=payment.provider_order_id,
+        previous_status=previous_status,
+        current_status=payment.status,
+        reconciled=reconciled,
+        detail=detail,
+    )
+
+
+@router.post(
+    "/reconcile",
+)
+def reconcile_trip_payments(
+    trip_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    trip = db.scalar(select(Trip).where(Trip.id == trip_id))
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    unresolved_payments = db.scalars(
+        select(Payment)
+        .where(
+            Payment.trip_id == trip_id,
+            Payment.status.in_(["CREATED", "PENDING"]),
+        )
+        .order_by(Payment.created_at.asc())
+        .with_for_update()
+    ).all()
+
+    results = []
+    for payment in unresolved_payments:
+        prev = payment.status
+        changed, detail = _reconcile_single_payment_record(payment, trip, db)
+        results.append({
+            "payment_id": str(payment.id),
+            "previous_status": prev,
+            "current_status": payment.status,
+            "reconciled": changed,
+            "detail": detail,
+        })
+
+    return {
+        "trip_id": str(trip_id),
+        "total_unresolved": len(unresolved_payments),
+        "reconciled_count": sum(1 for r in results if r["reconciled"]),
+        "results": results,
+    }
+
+
+@webhook_router.post(
+    "/webhook",
+    dependencies=[Depends(rate_limit(max_requests=60, window_seconds=60))],
+)
 async def razorpay_webhook(
     request: Request,
     x_razorpay_signature: str = Header(
@@ -558,6 +946,67 @@ async def razorpay_webhook(
             "status": "recorded",
             "event": "payment.failed",
             "payment_id": str(payment.id) if payment else None,
+            "event_id": clean_event_id,
+        }
+
+    # ---------------------------------------------------------
+    # 4b. Handle refund.processed / payment.refunded safely
+    # ---------------------------------------------------------
+    if event_name in ("refund.processed", "payment.refunded"):
+        refund_entity = event.get("payload", {}).get("refund", {}).get("entity", {})
+        payment_id_str = refund_entity.get("payment_id")
+        refund_id_str = refund_entity.get("id")
+
+        if payment_id_str:
+            payment = db.scalar(
+                select(Payment)
+                .where(Payment.provider_payment_id == payment_id_str)
+                .with_for_update()
+            )
+            if payment and payment.status != "REFUNDED":
+                wallet = db.scalar(
+                    select(Wallet)
+                    .where(Wallet.trip_id == payment.trip_id)
+                    .with_for_update()
+                )
+                if wallet and wallet.balance_paise >= payment.amount_paise:
+                    refund_record = PaymentRefund(
+                        payment_id=payment.id,
+                        trip_id=payment.trip_id,
+                        user_id=payment.user_id,
+                        provider_refund_id=refund_id_str or f"rfnd_wh_{uuid4().hex[:8]}",
+                        amount_paise=payment.amount_paise,
+                        status="PROCESSED",
+                        reason="Refund processed via webhook",
+                        created_by=payment.user_id,
+                    )
+                    db.add(refund_record)
+                    payment.status = "REFUNDED"
+
+                    wallet_tx = WalletTransaction(
+                        wallet_id=wallet.id,
+                        transaction_type="REFUND",
+                        amount_paise=payment.amount_paise,
+                        reference_type="REFUND",
+                        reference_id=refund_record.id,
+                        description=f"Refund via webhook for {payment.provider_payment_id}",
+                        created_by=payment.user_id,
+                    )
+                    db.add(wallet_tx)
+                    wallet.balance_paise -= payment.amount_paise
+
+        if clean_event_id:
+            db.add(
+                PaymentWebhookEvent(
+                    event_id=clean_event_id,
+                    event_type=event_name,
+                )
+            )
+        db.commit()
+
+        return {
+            "status": "recorded",
+            "event": event_name,
             "event_id": clean_event_id,
         }
 

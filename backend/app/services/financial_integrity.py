@@ -75,12 +75,25 @@ def calculate_wallet_transaction_balance(
         )
     ) or 0
 
+    refunds = db.scalar(
+        select(
+            func.coalesce(
+                func.sum(WalletTransaction.amount_paise),
+                0,
+            )
+        ).where(
+            WalletTransaction.wallet_id == wallet_id,
+            WalletTransaction.transaction_type == "REFUND",
+        )
+    ) or 0
+
     return (
         contributions
         + contribution_adjustments
         - expenses
         + expense_reversals
         - expense_adjustments
+        - refunds
     )
 
 def verify_wallet_balance(

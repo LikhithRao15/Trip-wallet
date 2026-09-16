@@ -10,3 +10,4 @@ from app.models.trip_activity import TripActivity
 from app.models.notification import Notification
 from app.models.payment import Payment
 from app.models.payment_webhook_event import PaymentWebhookEvent
+from app.models.payment_refund import PaymentRefund

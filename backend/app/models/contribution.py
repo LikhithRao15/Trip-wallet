@@ -62,6 +62,26 @@ class Contribution(Base):
         nullable=True,
     )
 
+    payment_reference: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    confirmed_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+
+    confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+
+    rejection_reason: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,

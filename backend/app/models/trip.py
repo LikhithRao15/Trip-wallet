@@ -53,6 +53,11 @@ class Trip(Base):
         nullable=False,
     )
 
+    admin_upi_id: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
     status: Mapped[str] = mapped_column(
         String(20),
         default="ACTIVE",

@@ -11,6 +11,7 @@ class TripCreate(BaseModel):
     start_date: date | None = None
     end_date: date | None = None
     currency: str = Field(default="INR", min_length=3, max_length=3)
+    admin_upi_id: str | None = Field(default=None, max_length=100)
 
 
 class TripUpdate(BaseModel):
@@ -19,6 +20,7 @@ class TripUpdate(BaseModel):
     destination: str | None = Field(default=None, max_length=150)
     start_date: date | None = None
     end_date: date | None = None
+    admin_upi_id: str | None = Field(default=None, max_length=100)
 
 
 class TripResponse(BaseModel):
@@ -30,6 +32,7 @@ class TripResponse(BaseModel):
     end_date: date | None
     currency: str
     admin_id: UUID
+    admin_upi_id: str | None = None
     status: str
     settlement_status: str = "OPEN"
 

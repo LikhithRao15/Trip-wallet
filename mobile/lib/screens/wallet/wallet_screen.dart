@@ -3,11 +3,14 @@ import 'package:flutter/material.dart';
 import '../../models/trip.dart';
 import '../../models/wallet_summary.dart';
 import '../../models/wallet_transaction.dart';
+import '../../services/auth_service.dart';
+import '../../services/contribution_service.dart';
 import '../../services/wallet_service.dart';
 import 'add_contribution_screen.dart';
 import 'contribution_history_screen.dart';
-import 'online_payment_screen.dart';
+import 'member_contribution_flow_screen.dart';
 import 'payment_history_screen.dart';
+import 'pending_contributions_screen.dart';
 import 'wallet_transactions_screen.dart';
 import '../expenses/pay_expense_screen.dart';
 
@@ -25,62 +28,95 @@ class WalletScreen extends StatefulWidget {
 
 class _WalletScreenState extends State<WalletScreen> {
   final WalletService _walletService = WalletService();
+  final ContributionService _contributionService = ContributionService();
+  final AuthService _authService = AuthService();
 
   WalletSummary? _summary;
   List<WalletTransaction> _transactions = [];
 
   bool _isLoading = true;
   String? _error;
+  int _pendingContributionsCount = 0;
+  bool _isAdmin = false;
 
   @override
   void initState() {
     super.initState();
+    _checkAdminStatus();
     _loadWallet();
   }
+
+  Future<void> _checkAdminStatus() async {
+    try {
+      final user = await _authService.getCurrentUser();
+      if (user != null && mounted) {
+        final userId = user['id']?.toString();
+        setState(() {
+          _isAdmin = userId == widget.trip.adminId;
+        });
+      }
+    } catch (_) {}
+  }
+
   Future<void> _openAddContribution() async {
-  final result = await Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (context) => AddContributionScreen(
-        trip: widget.trip,
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AddContributionScreen(
+          trip: widget.trip,
+        ),
       ),
-    ),
-  );
+    );
 
-  if (result == true && mounted) {
-    await _loadWallet();
+    if (result == true && mounted) {
+      await _loadWallet();
+    }
   }
-}
 
-Future<void> _openOnlinePayment() async {
-  final result = await Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (context) => OnlinePaymentScreen(
-        trip: widget.trip,
+  Future<void> _openMemberContribution() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MemberContributionFlowScreen(
+          trip: widget.trip,
+        ),
       ),
-    ),
-  );
+    );
 
-  if (result == true && mounted) {
-    await _loadWallet();
+    if (result == true && mounted) {
+      await _loadWallet();
+    }
   }
-}
 
-Future<void> _openPayExpense() async {
-  final result = await Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (context) => PayExpenseScreen(
-        trip: widget.trip,
+  Future<void> _openPendingReview() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PendingContributionsScreen(
+          trip: widget.trip,
+        ),
       ),
-    ),
-  );
+    );
 
-  if (result == true && mounted) {
-    await _loadWallet();
+    if (mounted) {
+      await _loadWallet();
+    }
   }
-}
+
+  Future<void> _openPayExpense() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PayExpenseScreen(
+          trip: widget.trip,
+        ),
+      ),
+    );
+
+    if (result == true && mounted) {
+      await _loadWallet();
+    }
+  }
 
   Future<void> _loadWallet() async {
     setState(() {
@@ -95,11 +131,21 @@ Future<void> _openPayExpense() async {
       final transactions =
           await _walletService.getTransactions(widget.trip.id);
 
+      int pendingCount = 0;
+      try {
+        final pending =
+            await _contributionService.getPendingContributions(widget.trip.id);
+        pendingCount = pending.length;
+      } catch (_) {
+        // Non-admin may get 403, which is normal
+      }
+
       if (!mounted) return;
 
       setState(() {
         _summary = summary;
         _transactions = transactions;
+        _pendingContributionsCount = pendingCount;
         _isLoading = false;
       });
     } catch (e) {
@@ -123,17 +169,30 @@ Future<void> _openPayExpense() async {
         title: const Text('Trip Wallet'),
         actions: [
           if (widget.trip.status != 'CLOSED') ...[
-            if (widget.trip.currency.toUpperCase() == 'INR')
-              IconButton(
-                onPressed: _isLoading ? null : _openOnlinePayment,
-                icon: const Icon(Icons.account_balance_wallet_outlined),
-                tooltip: 'Add Money via Razorpay',
+            // Admin Pending Review Icon with badge
+            if (_isAdmin)
+              Badge(
+                isLabelVisible: _pendingContributionsCount > 0,
+                label: Text('$_pendingContributionsCount'),
+                child: IconButton(
+                  onPressed: _isLoading ? null : _openPendingReview,
+                  icon: const Icon(Icons.rate_review_outlined),
+                  tooltip: 'Review Pending Contributions ($_pendingContributionsCount)',
+                ),
               ),
+            // Primary Member Contribution Flow
             IconButton(
-              onPressed: _isLoading ? null : _openAddContribution,
-              icon: const Icon(Icons.add),
+              onPressed: _isLoading ? null : _openMemberContribution,
+              icon: const Icon(Icons.add_card),
               tooltip: 'Add Contribution',
             ),
+            // Admin Direct Manual Entry
+            if (_isAdmin)
+              IconButton(
+                onPressed: _isLoading ? null : _openAddContribution,
+                icon: const Icon(Icons.post_add),
+                tooltip: 'Record Manual Contribution',
+              ),
           ],
           IconButton(
             onPressed: _isLoading
@@ -243,6 +302,36 @@ Future<void> _openPayExpense() async {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          if (_isAdmin && _pendingContributionsCount > 0) ...[
+            InkWell(
+              onTap: _openPendingReview,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.amber.shade300),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.pending_actions, color: Colors.amber.shade900),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        '$_pendingContributionsCount contribution(s) pending your verification.',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.amber.shade900,
+                        ),
+                      ),
+                    ),
+                    Icon(Icons.arrow_forward_ios, size: 14, color: Colors.amber.shade900),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
           _buildBalanceCard(summary),
 
           const SizedBox(height: 16),
@@ -333,6 +422,17 @@ Future<void> _openPayExpense() async {
                 color: Colors.grey.shade600,
               ),
             ),
+            if (widget.trip.status != 'CLOSED') ...[
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: _openMemberContribution,
+                icon: const Icon(Icons.add_circle_outline),
+                label: const Text('Add Contribution'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                ),
+              ),
+            ],
           ],
         ),
       ),

@@ -21,10 +21,13 @@ from app.services.activity_service import (
     record_activity,
     create_trip_notifications,
 )
+from datetime import datetime
 from app.schemas.wallet import (
     ContributionCreate,
     ContributionUpdate,
     ContributionResponse,
+    MemberContributionSubmit,
+    ContributionRejectRequest,
     WalletResponse,
     WalletTransactionResponse,
     WalletSummaryResponse,
@@ -211,7 +214,10 @@ def add_contribution(
             member_id=member.user_id,
             amount_paise=data.amount_paise,
             payment_method=data.payment_method.upper(),
+            payment_reference=data.payment_reference,
             status="CONFIRMED",
+            confirmed_by=current_user.id,
+            confirmed_at=datetime.utcnow(),
             note=data.note,
             idempotency_key=idempotency_key,
             request_hash=request_hash,
@@ -299,6 +305,355 @@ def add_contribution(
             detail="Contribution could not be created due to a conflicting request",
         )
 
+
+@router.post(
+    "/contributions/submit",
+    response_model=ContributionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def submit_member_contribution(
+    trip_id: UUID,
+    data: MemberContributionSubmit,
+    idempotency_key: str = Header(..., alias="Idempotency-Key"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Allow any active trip member to submit a contribution made directly
+    via UPI / bank transfer to the trip admin.
+    The contribution is stored with status='PENDING' and does NOT increment
+    the wallet balance until confirmed by the trip admin.
+    """
+    if not idempotency_key.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Idempotency-Key cannot be empty",
+        )
+
+    if len(idempotency_key) > 100:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Idempotency-Key must be 100 characters or fewer",
+        )
+
+    trip = db.scalar(select(Trip).where(Trip.id == trip_id))
+    if not trip:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trip not found")
+
+    if trip.status != "ACTIVE":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot submit contribution to a closed trip",
+        )
+
+    if getattr(trip, "settlement_status", "OPEN") == "SETTLED":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot submit contribution to a settled trip",
+        )
+
+    membership = db.scalar(
+        select(TripMember).where(
+            TripMember.trip_id == trip_id,
+            TripMember.user_id == current_user.id,
+            TripMember.status == "ACTIVE",
+        )
+    )
+    if not membership:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not an active member of this trip",
+        )
+
+    request_hash = create_request_hash({
+        "amount_paise": data.amount_paise,
+        "member_id": str(current_user.id),
+        "payment_method": data.payment_method.strip().upper(),
+        "payment_reference": data.payment_reference.strip(),
+        "note": data.note,
+    })
+
+    existing = db.scalar(
+        select(Contribution).where(
+            Contribution.trip_id == trip_id,
+            Contribution.idempotency_key == idempotency_key,
+        )
+    )
+    if existing:
+        if existing.request_hash != request_hash:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Idempotency-Key was already used with a different request",
+            )
+        return existing
+
+    try:
+        contribution = Contribution(
+            trip_id=trip_id,
+            member_id=current_user.id,
+            amount_paise=data.amount_paise,
+            payment_method=data.payment_method.strip().upper(),
+            payment_reference=data.payment_reference.strip(),
+            status="PENDING",
+            transaction_id=None,
+            note=data.note,
+            idempotency_key=idempotency_key,
+            request_hash=request_hash,
+        )
+        db.add(contribution)
+        db.flush()
+
+        record_activity(
+            db=db,
+            trip_id=trip_id,
+            actor_user_id=current_user.id,
+            event_type="CONTRIBUTION_SUBMITTED",
+            entity_type="CONTRIBUTION",
+            entity_id=contribution.id,
+            message=f"{current_user.name} submitted a contribution of ₹{data.amount_paise / 100:.2f} (Ref: {data.payment_reference.strip()}) awaiting admin confirmation.",
+        )
+
+        create_trip_notifications(
+            db=db,
+            user_ids={trip.admin_id},
+            trip_id=trip_id,
+            notification_type="CONTRIBUTION_SUBMITTED",
+            title="New Contribution Submitted",
+            body=f"{current_user.name} submitted ₹{data.amount_paise / 100:.2f} for verification in '{trip.name}'.",
+            entity_type="CONTRIBUTION",
+            entity_id=contribution.id,
+        )
+
+        db.commit()
+        db.refresh(contribution)
+        return contribution
+
+    except IntegrityError:
+        db.rollback()
+        existing = db.scalar(
+            select(Contribution).where(
+                Contribution.trip_id == trip_id,
+                Contribution.idempotency_key == idempotency_key,
+            )
+        )
+        if existing:
+            if existing.request_hash != request_hash:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Idempotency-Key was already used with a different request",
+                )
+            return existing
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Contribution could not be created due to a conflicting request",
+        )
+
+
+@router.get(
+    "/contributions/pending",
+    response_model=list[ContributionResponse],
+)
+def get_pending_contributions(
+    trip_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Trip admin review list of all pending contributions awaiting confirmation.
+    """
+    get_trip_admin(trip_id, current_user, db)
+
+    pending = db.scalars(
+        select(Contribution)
+        .where(
+            Contribution.trip_id == trip_id,
+            Contribution.status == "PENDING",
+        )
+        .order_by(Contribution.created_at.desc())
+    ).all()
+
+    return pending
+
+
+@router.post(
+    "/contributions/{contribution_id}/confirm",
+    response_model=ContributionResponse,
+)
+def confirm_contribution(
+    trip_id: UUID,
+    contribution_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Trip admin verifies and confirms a pending contribution.
+    Creates WalletTransaction and increments wallet balance atomically.
+    """
+    trip = get_trip_admin(trip_id, current_user, db)
+
+    contribution = db.scalar(
+        select(Contribution)
+        .where(
+            Contribution.id == contribution_id,
+            Contribution.trip_id == trip_id,
+        )
+        .with_for_update()
+    )
+
+    if not contribution:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Contribution not found",
+        )
+
+    if contribution.status != "PENDING":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Only PENDING contributions can be confirmed. Current status is {contribution.status}",
+        )
+
+    wallet = db.scalar(
+        select(Wallet)
+        .where(Wallet.trip_id == trip_id)
+        .with_for_update()
+    )
+
+    if not wallet:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Wallet not found",
+        )
+
+    contribution.status = "CONFIRMED"
+    contribution.confirmed_by = current_user.id
+    contribution.confirmed_at = datetime.utcnow()
+
+    member_user = db.scalar(select(User).where(User.id == contribution.member_id))
+    m_name = member_user.name if member_user else "Member"
+
+    transaction = WalletTransaction(
+        wallet_id=wallet.id,
+        transaction_type="CONTRIBUTION",
+        amount_paise=contribution.amount_paise,
+        reference_type="CONTRIBUTION",
+        reference_id=contribution.id,
+        description=contribution.note or f"Contribution from {m_name}",
+        created_by=current_user.id,
+    )
+    db.add(transaction)
+    db.flush()
+
+    contribution.transaction_id = transaction.id
+    wallet.balance_paise += contribution.amount_paise
+
+    record_activity(
+        db=db,
+        trip_id=trip_id,
+        actor_user_id=current_user.id,
+        event_type="CONTRIBUTION_CONFIRMED",
+        entity_type="CONTRIBUTION",
+        entity_id=contribution.id,
+        message=f"{current_user.name} confirmed contribution of ₹{contribution.amount_paise / 100:.2f} from {m_name}.",
+    )
+
+    create_trip_notifications(
+        db=db,
+        user_ids={contribution.member_id},
+        trip_id=trip_id,
+        notification_type="CONTRIBUTION_CONFIRMED",
+        title="Contribution Confirmed",
+        body=f"Your ₹{contribution.amount_paise / 100:.2f} contribution in '{trip.name}' was confirmed by the admin.",
+        entity_type="CONTRIBUTION",
+        entity_id=contribution.id,
+    )
+
+    db.commit()
+    db.refresh(contribution)
+    return contribution
+
+
+@router.post(
+    "/contributions/{contribution_id}/reject",
+    response_model=ContributionResponse,
+)
+def reject_contribution(
+    trip_id: UUID,
+    contribution_id: UUID,
+    data: ContributionRejectRequest = ContributionRejectRequest(),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Trip admin rejects an unverified or invalid pending contribution.
+    Does NOT affect wallet balance or create a transaction.
+    """
+    trip = get_trip_admin(trip_id, current_user, db)
+
+    contribution = db.scalar(
+        select(Contribution)
+        .where(
+            Contribution.id == contribution_id,
+            Contribution.trip_id == trip_id,
+        )
+        .with_for_update()
+    )
+
+    if not contribution:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Contribution not found",
+        )
+
+    if contribution.status != "PENDING":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Only PENDING contributions can be rejected. Current status is {contribution.status}",
+        )
+
+    reason = data.reason.strip() if data.reason and data.reason.strip() else None
+
+    contribution.status = "REJECTED"
+    contribution.confirmed_by = current_user.id
+    contribution.confirmed_at = datetime.utcnow()
+    contribution.rejection_reason = reason
+
+    member_user = db.scalar(select(User).where(User.id == contribution.member_id))
+    m_name = member_user.name if member_user else "Member"
+
+    msg = f"{current_user.name} rejected contribution of ₹{contribution.amount_paise / 100:.2f} from {m_name}."
+    if reason:
+        msg += f" Reason: {reason}"
+
+    record_activity(
+        db=db,
+        trip_id=trip_id,
+        actor_user_id=current_user.id,
+        event_type="CONTRIBUTION_REJECTED",
+        entity_type="CONTRIBUTION",
+        entity_id=contribution.id,
+        message=msg,
+    )
+
+    notif_body = f"Your ₹{contribution.amount_paise / 100:.2f} contribution in '{trip.name}' was rejected."
+    if reason:
+        notif_body += f" Reason: {reason}"
+
+    create_trip_notifications(
+        db=db,
+        user_ids={contribution.member_id},
+        trip_id=trip_id,
+        notification_type="CONTRIBUTION_REJECTED",
+        title="Contribution Rejected",
+        body=notif_body,
+        entity_type="CONTRIBUTION",
+        entity_id=contribution.id,
+    )
+
+    db.commit()
+    db.refresh(contribution)
+    return contribution
+
+
 @router.get(
     "/contributions",
     response_model=list[ContributionResponse],
@@ -307,6 +662,7 @@ def get_contributions(
     trip_id: UUID,
     member_id: UUID | None = None,
     payment_method: str | None = None,
+    status: str | None = None,
     search: str | None = None,
     sort: str = "newest",
     limit: int = Query(default=100, ge=1, le=500),
@@ -361,6 +717,12 @@ def get_contributions(
     if payment_method:
         query = query.where(
             Contribution.payment_method == payment_method.strip().upper()
+        )
+
+    # Filter by status
+    if status and status.strip():
+        query = query.where(
+            Contribution.status == status.strip().upper()
         )
 
     # Filter by search note

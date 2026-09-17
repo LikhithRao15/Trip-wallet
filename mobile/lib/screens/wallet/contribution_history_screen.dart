@@ -32,6 +32,7 @@ class _ContributionHistoryScreenState
 
   String? _selectedMemberId;
   String? _selectedPaymentMethod;
+  String? _selectedStatus;
   String _sortOrder = 'newest';
 
   bool _isLoading = true;
@@ -45,10 +46,17 @@ class _ContributionHistoryScreenState
     'OTHER',
   ];
 
+  final List<String> _statuses = [
+    'CONFIRMED',
+    'PENDING',
+    'REJECTED',
+  ];
+
   bool get _hasActiveFilters =>
       _searchController.text.trim().isNotEmpty ||
       _selectedMemberId != null ||
       _selectedPaymentMethod != null ||
+      _selectedStatus != null ||
       _sortOrder != 'newest';
 
   @override
@@ -93,6 +101,7 @@ class _ContributionHistoryScreenState
         widget.trip.id,
         memberId: _selectedMemberId,
         paymentMethod: _selectedPaymentMethod,
+        status: _selectedStatus,
         search: _searchController.text.trim().isNotEmpty
             ? _searchController.text.trim()
             : null,
@@ -120,6 +129,7 @@ class _ContributionHistoryScreenState
       _searchController.clear();
       _selectedMemberId = null;
       _selectedPaymentMethod = null;
+      _selectedStatus = null;
       _sortOrder = 'newest';
     });
     _loadContributions();
@@ -240,6 +250,32 @@ class _ContributionHistoryScreenState
             onChanged: (method) {
               setState(() {
                 _selectedPaymentMethod = method;
+              });
+              _loadContributions();
+            },
+          ),
+          const SizedBox(width: 12),
+
+          // Status Filter Dropdown
+          DropdownButton<String?>(
+            value: _selectedStatus,
+            hint: const Text('Status: All'),
+            underline: const SizedBox(),
+            items: [
+              const DropdownMenuItem<String?>(
+                value: null,
+                child: Text('All Statuses'),
+              ),
+              ..._statuses.map(
+                (status) => DropdownMenuItem<String?>(
+                  value: status,
+                  child: Text(status),
+                ),
+              ),
+            ],
+            onChanged: (status) {
+              setState(() {
+                _selectedStatus = status;
               });
               _loadContributions();
             },
@@ -422,16 +458,30 @@ class _ContributionHistoryScreenState
                           vertical: 2,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.green.shade50,
+                          color: contribution.status == 'PENDING'
+                              ? Colors.amber.shade50
+                              : contribution.status == 'REJECTED'
+                                  ? Colors.red.shade50
+                                  : Colors.green.shade50,
                           borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: Colors.green.shade200),
+                          border: Border.all(
+                            color: contribution.status == 'PENDING'
+                                ? Colors.amber.shade300
+                                : contribution.status == 'REJECTED'
+                                    ? Colors.red.shade300
+                                    : Colors.green.shade200,
+                          ),
                         ),
                         child: Text(
                           contribution.status,
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
-                            color: Colors.green.shade800,
+                            color: contribution.status == 'PENDING'
+                                ? Colors.amber.shade900
+                                : contribution.status == 'REJECTED'
+                                    ? Colors.red.shade800
+                                    : Colors.green.shade800,
                           ),
                         ),
                       ),
@@ -447,6 +497,29 @@ class _ContributionHistoryScreenState
                       ],
                     ],
                   ),
+                  if (contribution.paymentReference != null &&
+                      contribution.paymentReference!.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Ref: ${contribution.paymentReference}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
+                  if (contribution.rejectionReason != null &&
+                      contribution.rejectionReason!.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Reason: ${contribution.rejectionReason}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.red.shade700,
+                      ),
+                    ),
+                  ],
                   if (contribution.note != null &&
                       contribution.note!.isNotEmpty) ...[
                     const SizedBox(height: 6),

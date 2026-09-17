@@ -43,6 +43,7 @@ def create_trip(
         end_date=data.end_date,
         currency=data.currency.upper(),
         admin_id=current_user.id,
+        admin_upi_id=data.admin_upi_id.strip() if data.admin_upi_id and data.admin_upi_id.strip() else None,
         status="ACTIVE",
     )
 
@@ -194,6 +195,8 @@ def update_trip(
         trip.start_date = data.start_date
     if data.end_date is not None:
         trip.end_date = data.end_date
+    if data.admin_upi_id is not None:
+        trip.admin_upi_id = data.admin_upi_id.strip() if data.admin_upi_id.strip() else None
 
     record_activity(
         db=db,

@@ -5,6 +5,10 @@ class Contribution {
   final int amountPaise;
   final String paymentMethod;
   final String status;
+  final String? paymentReference;
+  final String? confirmedBy;
+  final String? confirmedAt;
+  final String? rejectionReason;
   final String? note;
   final String createdAt;
 
@@ -15,6 +19,10 @@ class Contribution {
     required this.amountPaise,
     required this.paymentMethod,
     required this.status,
+    this.paymentReference,
+    this.confirmedBy,
+    this.confirmedAt,
+    this.rejectionReason,
     this.note,
     required this.createdAt,
   });
@@ -27,7 +35,11 @@ class Contribution {
       amountPaise: json['amount_paise'] ?? 0,
       paymentMethod: json['payment_method']?.toString() ?? 'CASH',
       status: json['status']?.toString() ?? 'CONFIRMED',
-      note: json['note'],
+      paymentReference: json['payment_reference']?.toString(),
+      confirmedBy: json['confirmed_by']?.toString(),
+      confirmedAt: json['confirmed_at']?.toString(),
+      rejectionReason: json['rejection_reason']?.toString(),
+      note: json['note']?.toString(),
       createdAt: json['created_at']?.toString() ?? '',
     );
   }

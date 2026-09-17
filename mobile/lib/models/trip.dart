@@ -7,6 +7,7 @@ class Trip {
   final String? endDate;
   final String currency;
   final String adminId;
+  final String? adminUpiId;
   final String status;
   final String settlementStatus;
 
@@ -19,6 +20,7 @@ class Trip {
     this.endDate,
     required this.currency,
     required this.adminId,
+    this.adminUpiId,
     required this.status,
     this.settlementStatus = 'OPEN',
   });
@@ -33,6 +35,7 @@ class Trip {
       endDate: json['end_date'],
       currency: json['currency'] ?? 'INR',
       adminId: json['admin_id'],
+      adminUpiId: json['admin_upi_id'],
       status: json['status'] ?? 'ACTIVE',
       settlementStatus: json['settlement_status'] ?? 'OPEN',
     );

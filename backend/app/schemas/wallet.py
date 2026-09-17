@@ -19,12 +19,27 @@ class ContributionCreate(BaseModel):
     member_id: UUID
     amount_paise: int = Field(gt=0)
     payment_method: str = "CASH"
+    payment_reference: str | None = Field(default=None, max_length=100)
     note: str | None = None
+
+
+class MemberContributionSubmit(BaseModel):
+    amount_paise: int = Field(gt=0)
+    payment_reference: str = Field(min_length=3, max_length=100)
+    payment_method: str = Field(default="UPI", min_length=1, max_length=30)
+    note: str | None = None
+
+
+class ContributionRejectRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=500)
+
 
 class ContributionUpdate(BaseModel):
     amount_paise: int = Field(gt=0)
     payment_method: str = Field(min_length=1, max_length=30)
+    payment_reference: str | None = Field(default=None, max_length=100)
     note: str | None = None
+
 
 class ContributionResponse(BaseModel):
     id: UUID
@@ -33,8 +48,13 @@ class ContributionResponse(BaseModel):
     amount_paise: int
     payment_method: str
     status: str
-    transaction_id: UUID | None
-    note: str | None
+    payment_reference: str | None = None
+    confirmed_by: UUID | None = None
+    confirmed_at: datetime | None = None
+    rejection_reason: str | None = None
+    transaction_id: UUID | None = None
+    note: str | None = None
+    created_at: datetime
 
     model_config = {
         "from_attributes": True

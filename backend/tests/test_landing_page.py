@@ -10,7 +10,7 @@ def test_landing_page_serves_html():
     assert response.status_code == 200
     assert "text/html" in response.headers.get("content-type", "")
     assert "Trip Wallet" in response.text
-    assert "Shared Digital Wallet" in response.text
+    assert "Group Travel Expense" in response.text
     assert "Razorpay" in response.text
 
 

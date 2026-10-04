@@ -31,7 +31,11 @@ from app.schemas.payment import (
     PaymentVerifyRequest,
     PaymentVerifyResponse,
 )
-from app.services.activity_service import record_activity
+from app.services.activity_service import (
+    create_notification,
+    create_trip_notifications,
+    record_activity,
+)
 from app.services.contribution_service import create_contribution_from_payment
 from app.services.idempotency import create_request_hash
 from app.services.payment_service import (
@@ -452,6 +456,52 @@ def verify_payment(
         # Link the financial contribution to this payment.
         payment.contribution_id = contribution.id
 
+        # In-app notifications & activity logging
+        amount_inr = payment.amount_paise / 100.0
+        create_notification(
+            db=db,
+            user_id=payment.user_id,
+            trip_id=trip.id,
+            notification_type="PAYMENT_SUCCESS",
+            title="Online Payment Successful",
+            body=f"Your online payment of ₹{amount_inr:,.2f} for '{trip.name}' was confirmed.",
+            entity_type="PAYMENT",
+            entity_id=payment.id,
+        )
+
+        admin_member = db.scalar(
+            select(TripMember).where(
+                TripMember.trip_id == trip.id,
+                TripMember.role == "ADMIN",
+                TripMember.status == "ACTIVE",
+            )
+        )
+        if admin_member and admin_member.user_id != payment.user_id:
+            create_notification(
+                db=db,
+                user_id=admin_member.user_id,
+                trip_id=trip.id,
+                notification_type="PAYMENT_RECEIVED",
+                title="Online Contribution Received",
+                body=f"A payment of ₹{amount_inr:,.2f} was added to '{trip.name}' via Razorpay.",
+                entity_type="PAYMENT",
+                entity_id=payment.id,
+            )
+
+        record_activity(
+            db=db,
+            trip_id=trip.id,
+            actor_user_id=payment.user_id,
+            event_type="PAYMENT_VERIFIED",
+            message=f"Online payment of ₹{amount_inr:,.2f} verified via Razorpay",
+            entity_type="PAYMENT",
+            entity_id=payment.id,
+            metadata={
+                "amount_paise": payment.amount_paise,
+                "provider_payment_id": payment.provider_payment_id,
+            },
+        )
+
         # IMPORTANT:
         # Payment SUCCESS + Contribution + WalletTransaction
         # + wallet balance update are committed together.
@@ -645,6 +695,29 @@ def refund_payment(
 
         wallet.balance_paise -= payment.amount_paise
 
+        # Send in-app notification & activity log
+        amount_inr = payment.amount_paise / 100.0
+        create_notification(
+            db=db,
+            user_id=payment.user_id,
+            trip_id=trip_id,
+            notification_type="PAYMENT_REFUNDED",
+            title="Online Payment Refunded",
+            body=f"A refund of ₹{amount_inr:,.2f} for '{trip.name}' was initiated.",
+            entity_type="REFUND",
+            entity_id=refund_record.id,
+        )
+
+        record_activity(
+            db=db,
+            trip_id=trip_id,
+            actor_user_id=current_user.id,
+            event_type="PAYMENT_REFUNDED",
+            entity_type="PAYMENT",
+            entity_id=payment.id,
+            message=f"Refund of ₹{amount_inr:,.2f} processed",
+        )
+
         db.commit()
         db.refresh(refund_record)
 
@@ -657,16 +730,6 @@ def refund_payment(
             provider_refund_id=provider_refund_id,
             amount_paise=payment.amount_paise,
             status="SUCCESS",
-        )
-
-        record_activity(
-            db=db,
-            trip_id=trip_id,
-            actor_user_id=current_user.id,
-            event_type="PAYMENT_REFUNDED",
-            entity_type="PAYMENT",
-            entity_id=payment.id,
-            message=f"Refund of ₹{payment.amount_paise / 100:.2f} processed",
         )
 
         return PaymentRefundResponse(

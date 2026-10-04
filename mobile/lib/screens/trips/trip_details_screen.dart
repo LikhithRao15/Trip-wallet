@@ -1,25 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/constants/expense_categories.dart';
+import '../../data/repositories/trip_repository.dart';
 import '../../models/contribution.dart';
 import '../../models/expense.dart';
-import '../../models/trip.dart';
 import '../../models/member_financial_summary.dart';
+import '../../models/trip.dart';
 import '../../models/trip_member.dart';
 import '../../models/wallet_summary.dart';
 import '../../services/auth_service.dart';
 import '../../services/member_financial_service.dart';
 import '../../services/trip_service.dart';
+import '../../widgets/sync_status_badge.dart';
 import '../expenses/expense_details_screen.dart';
 import '../expenses/expense_history_screen.dart';
 import '../expenses/pay_expense_screen.dart';
 import '../settlement/settlement_screen.dart';
+import '../wallet/add_contribution_screen.dart';
 import '../wallet/contribution_history_screen.dart';
 import '../wallet/wallet_screen.dart';
 import 'close_trip_screen.dart';
-import '../../core/network/network_info.dart';
-import '../../data/repositories/trip_repository.dart';
-import '../../widgets/sync_status_badge.dart';
 import 'member_financial_screen.dart';
 import 'members_screen.dart';
 import 'statistics_screen.dart';
@@ -34,9 +35,10 @@ class TripDetailsScreen extends StatefulWidget {
   State<TripDetailsScreen> createState() => _TripDetailsScreenState();
 }
 
-class _TripDetailsScreenState extends State<TripDetailsScreen> {
+class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTickerProviderStateMixin {
   late Trip _trip;
   final AuthService _authService = AuthService();
+  late TabController _tabController;
 
   WalletSummary? _walletSummary;
   int? _memberCount;
@@ -54,7 +56,14 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   void initState() {
     super.initState();
     _trip = widget.trip;
+    _tabController = TabController(length: 3, vsync: this);
     _loadDashboard();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadDashboard() async {
@@ -65,16 +74,11 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
 
     try {
       final repo = TripRepository.instance;
-      final tripFuture =
-          repo.getTrip(_trip.id).then((t) => t ?? _trip).catchError((_) => _trip);
-      final walletFuture =
-          repo.getWallet(_trip.id).catchError((_) => null);
-      final membersFuture =
-          repo.getMembers(_trip.id).catchError((_) => <TripMember>[]);
-      final expensesFuture =
-          repo.getExpenses(_trip.id).catchError((_) => <Expense>[]);
-      final contributionsFuture =
-          repo.getContributions(_trip.id).catchError((_) => <Contribution>[]);
+      final tripFuture = repo.getTrip(_trip.id).then((t) => t ?? _trip).catchError((_) => _trip);
+      final walletFuture = repo.getWallet(_trip.id).catchError((_) => null);
+      final membersFuture = repo.getMembers(_trip.id).catchError((_) => <TripMember>[]);
+      final expensesFuture = repo.getExpenses(_trip.id).catchError((_) => <Expense>[]);
+      final contributionsFuture = repo.getContributions(_trip.id).catchError((_) => <Contribution>[]);
       final userFuture = _authService.getCurrentUser().catchError((_) => null);
       final financialSummaryFuture =
           MemberFinancialService().getSummary(_trip.id).catchError((_) => <MemberFinancialSummary>[]);
@@ -111,8 +115,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
         _memberCount = members.length;
         _expenseCount = expenses.length;
         _contributionCount = contributions.length;
-        _recentExpenses = expenses.take(3).toList();
-        _recentContributions = contributions.take(3).toList();
+        _recentExpenses = expenses.take(5).toList();
+        _recentContributions = contributions.take(5).toList();
         _memberSummaries = memberSummaries;
         _memberNames = names;
         _isAdmin = currentUser != null && currentUser['id'] == _trip.adminId;
@@ -130,7 +134,10 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   }
 
   String _formatMoney(int paise) {
-    return '${_trip.currency} ${(paise / 100).toStringAsFixed(2)}';
+    final absPaise = paise.abs();
+    final inr = (absPaise / 100).toStringAsFixed(2);
+    final sign = paise < 0 ? '-' : '';
+    return '$sign${_trip.currency} $inr';
   }
 
   String _formatDate(String isoString) {
@@ -144,14 +151,12 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
 
   Future<void> _showEditTripDialog() async {
     final nameController = TextEditingController(text: _trip.name);
-    final destinationController =
-        TextEditingController(text: _trip.destination ?? '');
-    final descriptionController =
-        TextEditingController(text: _trip.description ?? '');
+    final destinationController = TextEditingController(text: _trip.destination ?? '');
+    final descriptionController = TextEditingController(text: _trip.description ?? '');
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (context) => AlertDialog(
         title: const Text('Edit Trip Details'),
         content: SingleChildScrollView(
           child: Column(
@@ -159,43 +164,25 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
             children: [
               TextField(
                 controller: nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Trip Name *',
-                  hintText: 'e.g. Goa Vacation',
-                ),
+                decoration: const InputDecoration(labelText: 'Trip Name *'),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: destinationController,
-                decoration: const InputDecoration(
-                  labelText: 'Destination',
-                  hintText: 'e.g. North Goa',
-                ),
+                decoration: const InputDecoration(labelText: 'Destination'),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: descriptionController,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Description',
-                  hintText: 'Trip itinerary notes...',
-                ),
+                decoration: const InputDecoration(labelText: 'Description'),
+                maxLines: 2,
               ),
             ],
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (nameController.text.trim().isEmpty) return;
-              Navigator.pop(ctx, true);
-            },
-            child: const Text('Save'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Save')),
         ],
       ),
     );
@@ -205,29 +192,20 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
         final updated = await TripService().updateTrip(
           _trip.id,
           name: nameController.text.trim(),
-          destination: destinationController.text.trim().isNotEmpty
-              ? destinationController.text.trim()
-              : null,
-          description: descriptionController.text.trim().isNotEmpty
-              ? descriptionController.text.trim()
-              : null,
+          destination: destinationController.text.trim().isNotEmpty ? destinationController.text.trim() : null,
+          description: descriptionController.text.trim().isNotEmpty ? descriptionController.text.trim() : null,
         );
         if (mounted) {
-          setState(() {
-            _trip = updated;
-          });
+          setState(() => _trip = updated);
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Trip details updated successfully')),
+            const SnackBar(content: Text('Trip updated successfully')),
           );
           _loadDashboard();
         }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(e.toString().replaceFirst('Exception: ', '')),
-              backgroundColor: Colors.red,
-            ),
+            SnackBar(content: Text(e.toString().replaceFirst('Exception: ', '')), backgroundColor: Colors.red),
           );
         }
       }
@@ -236,66 +214,554 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final isClosed = _trip.status == 'CLOSED';
 
     return Scaffold(
+      backgroundColor: theme.colorScheme.surface,
       appBar: AppBar(
-        title: Text(_trip.name),
-        actions: [
-          if (_isAdmin && !isClosed)
-            IconButton(
-              onPressed: _showEditTripDialog,
-              icon: const Icon(Icons.edit_outlined),
-              tooltip: 'Edit Trip Details',
+        elevation: 0,
+        backgroundColor: theme.colorScheme.surface,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _trip.name,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
+            if (_trip.destination != null && _trip.destination!.isNotEmpty)
+              Text(
+                _trip.destination!,
+                style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+              ),
+          ],
+        ),
+        actions: [
+          const SyncStatusBadge(),
           IconButton(
+            icon: const Icon(Icons.history_rounded),
+            tooltip: 'Activity Timeline',
             onPressed: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) => TripActivityScreen(
-                    tripId: _trip.id,
-                    tripName: _trip.name,
-                  ),
+                  builder: (context) => TripActivityScreen(tripId: _trip.id, tripName: _trip.name),
                 ),
               );
             },
-            icon: const Icon(Icons.history_rounded),
-            tooltip: 'Activity Timeline',
           ),
-          IconButton(
-            onPressed: _isLoading ? null : _loadDashboard,
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert),
+            onSelected: (value) async {
+              if (value == 'edit') _showEditTripDialog();
+              if (value == 'members') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => MembersScreen(trip: _trip)),
+                );
+              }
+              if (value == 'analytics') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => StatisticsScreen(trip: _trip)),
+                );
+              }
+              if (value == 'close' && _isAdmin && !isClosed) {
+                final closed = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(builder: (_) => CloseTripScreen(trip: _trip)),
+                );
+                if (closed == true) _loadDashboard();
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'members',
+                child: Row(
+                  children: [
+                    Icon(Icons.group_rounded, size: 20),
+                    SizedBox(width: 10),
+                    Text('Manage Members'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'analytics',
+                child: Row(
+                  children: [
+                    Icon(Icons.bar_chart_rounded, size: 20),
+                    SizedBox(width: 10),
+                    Text('Spending Analytics'),
+                  ],
+                ),
+              ),
+              if (_isAdmin && !isClosed) ...[
+                const PopupMenuItem(
+                  value: 'edit',
+                  child: Row(
+                    children: [
+                      Icon(Icons.edit_outlined, size: 20),
+                      SizedBox(width: 10),
+                      Text('Edit Trip Details'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'close',
+                  child: Row(
+                    children: [
+                      Icon(Icons.lock_outline_rounded, color: Colors.amber, size: 20),
+                      SizedBox(width: 10),
+                      Text('Close & Settle Trip', style: TextStyle(color: Colors.amber)),
+                    ],
+                  ),
+                ),
+              ],
+            ],
           ),
         ],
+        bottom: TabBar(
+          controller: _tabController,
+          labelColor: theme.colorScheme.primary,
+          unselectedLabelColor: theme.colorScheme.onSurfaceVariant,
+          indicatorColor: theme.colorScheme.primary,
+          indicatorWeight: 3,
+          tabs: const [
+            Tab(text: 'Overview', icon: Icon(Icons.dashboard_rounded, size: 20)),
+            Tab(text: 'Expenses', icon: Icon(Icons.receipt_long_rounded, size: 20)),
+            Tab(text: 'Settlement', icon: Icon(Icons.balance_rounded, size: 20)),
+          ],
+        ),
       ),
-      body: _buildBody(isClosed),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : TabBarView(
+              controller: _tabController,
+              children: [
+                _buildOverviewTab(theme, isClosed),
+                _buildExpensesTab(theme, isClosed),
+                _buildSettlementTab(theme, isClosed),
+              ],
+            ),
+      floatingActionButton: isClosed
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => PayExpenseScreen(trip: _trip)),
+                );
+                _loadDashboard();
+              },
+              icon: const Icon(Icons.add_card_rounded),
+              label: const Text('Add Expense'),
+            ),
     );
   }
 
-  Widget _buildBody(bool isClosed) {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
+  // =========================================================
+  // TAB 1: OVERVIEW
+  // =========================================================
+  Widget _buildOverviewTab(ThemeData theme, bool isClosed) {
+    final balancePaise = _walletSummary?.balancePaise ?? 0;
+    final totalSpentPaise = _walletSummary?.totalExpensesPaise ?? 0;
+    final totalInPaise = _walletSummary?.totalContributionsPaise ?? 0;
 
-    if (_error != null && _walletSummary == null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+    return RefreshIndicator(
+      onRefresh: _loadDashboard,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          // 1. Hero Balance Card
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  theme.colorScheme.primary,
+                  theme.colorScheme.primary.withOpacity(0.85),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: theme.colorScheme.primary.withOpacity(0.3),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Trip Wallet Balance',
+                      style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w500),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.white12,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        isClosed ? 'Closed' : 'Active',
+                        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _formatMoney(balancePaise),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.black12,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Row(
+                          children: [
+                            const Icon(Icons.arrow_downward_rounded, color: Color(0xFF34D399), size: 16),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Contributed', style: TextStyle(color: Colors.white60, fontSize: 10)),
+                                  Text(
+                                    _formatMoney(totalInPaise),
+                                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(height: 24, width: 1, color: Colors.white24),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            const Icon(Icons.arrow_upward_rounded, color: Color(0xFFF87171), size: 16),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('Total Spent', style: TextStyle(color: Colors.white60, fontSize: 10)),
+                                  Text(
+                                    _formatMoney(totalSpentPaise),
+                                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 18),
+
+          // 2. Quick Action Grid
+          Row(
             children: [
-              const Icon(Icons.error_outline, size: 48, color: Colors.red),
-              const SizedBox(height: 12),
-              Text(_error!, textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: _loadDashboard,
-                child: const Text('Retry'),
+              _buildQuickActionButton(
+                theme: theme,
+                icon: Icons.add_circle_outline_rounded,
+                label: 'Add Money',
+                onTap: isClosed
+                    ? null
+                    : () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => WalletScreen(trip: _trip)),
+                        );
+                        _loadDashboard();
+                      },
+              ),
+              const SizedBox(width: 10),
+              _buildQuickActionButton(
+                theme: theme,
+                icon: Icons.receipt_long_rounded,
+                label: 'Pay Expense',
+                onTap: isClosed
+                    ? null
+                    : () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => PayExpenseScreen(trip: _trip)),
+                        );
+                        _loadDashboard();
+                      },
+              ),
+              const SizedBox(width: 10),
+              _buildQuickActionButton(
+                theme: theme,
+                icon: Icons.group_rounded,
+                label: 'Members (${_memberCount ?? 0})',
+                onTap: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => MembersScreen(trip: _trip)),
+                  );
+                  _loadDashboard();
+                },
+              ),
+              const SizedBox(width: 10),
+              _buildQuickActionButton(
+                theme: theme,
+                icon: Icons.pie_chart_rounded,
+                label: 'Analytics',
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => StatisticsScreen(trip: _trip)),
+                  );
+                },
               ),
             ],
           ),
+
+          const SizedBox(height: 22),
+
+          // 3. Member Balances Glance
+          if (_memberSummaries.isNotEmpty) ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Member Balances',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => MemberFinancialScreen(trip: _trip)),
+                    );
+                  },
+                  child: const Text('View All'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 100,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: _memberSummaries.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                itemBuilder: (context, index) {
+                  final summary = _memberSummaries[index];
+                  final isPositive = summary.netPaise >= 0;
+
+                  return Container(
+                    width: 140,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.3)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          summary.name,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          isPositive ? 'Surplus' : 'Owes',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: isPositive ? const Color(0xFF10B981) : Colors.redAccent,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _formatMoney(summary.netPaise),
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: isPositive ? const Color(0xFF10B981) : Colors.redAccent,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 22),
+          ],
+
+          // 4. Recent Transactions List
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Recent Spending',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              if (_recentExpenses.isNotEmpty)
+                TextButton(
+                  onPressed: () => _tabController.animateTo(1),
+                  child: const Text('See All'),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (_recentExpenses.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surfaceVariant.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Center(
+                child: Text('No expenses recorded yet.'),
+              ),
+            )
+          else
+            ..._recentExpenses.map((expense) => _buildExpenseTile(theme, expense)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickActionButton({
+    required ThemeData theme,
+    required IconData icon,
+    required String label,
+    required VoidCallback? onTap,
+  }) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 6),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceVariant.withOpacity(0.35),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.4)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: theme.colorScheme.primary, size: 22),
+              const SizedBox(height: 6),
+              Text(
+                label,
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExpenseTile(ThemeData theme, Expense expense) {
+    final catColor = getExpenseCategoryColor(expense.category);
+    final catIcon = getExpenseCategoryIcon(expense.category);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceVariant.withOpacity(0.25),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.3)),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        leading: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: catColor.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(catIcon, color: catColor, size: 20),
+        ),
+        title: Text(
+          expense.description ?? 'Expense',
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          '${_formatDate(expense.createdAt)} • ${_memberNames[expense.paidBy] ?? 'Member'}',
+          style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+        ),
+        trailing: Text(
+          _formatMoney(expense.amountPaise),
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+        ),
+        onTap: () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ExpenseDetailsScreen(trip: _trip, expenseId: expense.id),
+            ),
+          );
+          _loadDashboard();
+        },
+      ),
+    );
+  }
+
+  // =========================================================
+  // TAB 2: EXPENSES
+  // =========================================================
+  Widget _buildExpensesTab(ThemeData theme, bool isClosed) {
+    if (_recentExpenses.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.receipt_long_outlined, size: 56, color: theme.colorScheme.primary.withOpacity(0.5)),
+            const SizedBox(height: 16),
+            const Text('No expenses recorded', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            const Text('Record group expenses paid from the wallet'),
+          ],
         ),
       );
     }
@@ -305,736 +771,117 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Align(
-            alignment: Alignment.centerRight,
-            child: Padding(
-              padding: EdgeInsets.only(bottom: 8.0),
-              child: SyncStatusBadge(),
-            ),
-          ),
-          _buildTripHeader(),
-          const SizedBox(height: 16),
-          _buildMetricsGrid(),
-          const SizedBox(height: 16),
-          _buildMemberFinancialSnapshotSection(),
-          const SizedBox(height: 20),
-          _buildRecentExpensesSection(),
-          _buildRecentContributionsSection(),
-          const SizedBox(height: 8),
-          const Text(
-            'Trip Management',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 12),
-          _buildSection(
-            context,
-            icon: Icons.people_outline,
-            title: 'Members',
-            subtitle: isClosed
-                ? 'View trip members (${_memberCount ?? 0})'
-                : 'Manage trip members (${_memberCount ?? 0})',
-            onTap: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => MembersScreen(trip: _trip),
-                ),
-              );
-              _loadDashboard();
-            },
-          ),
-          _buildSection(
-            context,
-            icon: Icons.account_balance_wallet_outlined,
-            title: 'Wallet',
-            subtitle: _walletSummary != null
-                ? 'Balance: ${_formatMoney(_walletSummary!.balancePaise)}'
-                : 'View common trip wallet',
-            onTap: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => WalletScreen(trip: _trip),
-                ),
-              );
-              _loadDashboard();
-            },
-          ),
-          _buildSection(
-            context,
-            icon: Icons.payments_outlined,
-            title: 'Contributions',
-            subtitle: isClosed
-                ? 'View all contributions (${_contributionCount ?? 0})'
-                : 'Record and view contributions (${_contributionCount ?? 0})',
-            onTap: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ContributionHistoryScreen(trip: _trip),
-                ),
-              );
-              _loadDashboard();
-            },
-          ),
-          _buildSection(
-            context,
-            icon: Icons.account_balance_outlined,
-            title: 'Member Finances',
-            subtitle: 'View contributions and spending by member',
-            onTap: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => MemberFinancialScreen(trip: _trip),
-                ),
-              );
-              _loadDashboard();
-            },
-          ),
-          _buildSection(
-            context,
-            icon: Icons.receipt_long_outlined,
-            title: 'Pay / Expenses',
-            subtitle: isClosed
-                ? 'View trip expenses (${_expenseCount ?? 0})'
-                : 'Record expenses from the common wallet (${_expenseCount ?? 0})',
-            onTap: () {
-              if (isClosed) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ExpenseHistoryScreen(trip: _trip),
-                  ),
-                ).then((_) => _loadDashboard());
-                return;
-              }
-
-              showModalBottomSheet(
-                context: context,
-                builder: (context) {
-                  return SafeArea(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        ListTile(
-                          leading: const Icon(Icons.payment),
-                          title: const Text('Pay New Expense'),
-                          subtitle: const Text(
-                            'Record an expense from the common wallet',
-                          ),
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => PayExpenseScreen(trip: _trip),
-                              ),
-                            ).then((_) => _loadDashboard());
-                          },
-                        ),
-                        ListTile(
-                          leading: const Icon(Icons.receipt_long),
-                          title: const Text('Expense History'),
-                          subtitle: const Text('View all trip expenses'),
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    ExpenseHistoryScreen(trip: _trip),
-                              ),
-                            ).then((_) => _loadDashboard());
-                          },
-                        ),
-                      ],
-                    ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'All Expenses (${_expenseCount ?? _recentExpenses.length})',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              IconButton(
+                icon: const Icon(Icons.filter_list_rounded),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => ExpenseHistoryScreen(trip: _trip)),
                   );
                 },
-              );
-            },
+                tooltip: 'Filter & Search',
+              ),
+            ],
           ),
-          _buildSection(
-            context,
-            icon: Icons.bar_chart_outlined,
-            title: 'Statistics',
-            subtitle: 'View trip spending statistics',
-            onTap: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => StatisticsScreen(trip: _trip),
-                ),
-              );
-              _loadDashboard();
-            },
-          ),
-          _buildSection(
-            context,
-            icon: Icons.history_rounded,
-            title: 'Activity Timeline',
-            subtitle: 'View full audit log of trip events',
-            onTap: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => TripActivityScreen(
-                    tripId: _trip.id,
-                    tripName: _trip.name,
-                  ),
-                ),
-              );
-            },
-          ),
-          _buildSection(
-            context,
-            icon: Icons.handshake_outlined,
-            title: 'Settlement',
-            subtitle: 'Calculate who should receive or pay',
-            onTap: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => SettlementScreen(trip: _trip),
-                ),
-              );
-              _loadDashboard();
-            },
-          ),
-          if (!isClosed && _isAdmin)
-            _buildSection(
-              context,
-              icon: Icons.lock_outline,
-              title: 'Close Trip',
-              subtitle: 'Finalise the trip and lock financial changes',
-              onTap: () async {
-                final isOnline = await NetworkInfo.instance.isConnected;
-                if (!mounted) return;
-                if (!isOnline) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Internet connection required for this operation.'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                  return;
-                }
-                final result = await Navigator.push(
+          const SizedBox(height: 8),
+          ..._recentExpenses.map((e) => _buildExpenseTile(theme, e)),
+          const SizedBox(height: 12),
+          Center(
+            child: TextButton.icon(
+              onPressed: () {
+                Navigator.push(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => CloseTripScreen(trip: _trip),
-                  ),
+                  MaterialPageRoute(builder: (_) => ExpenseHistoryScreen(trip: _trip)),
                 );
-
-                if (result == true && mounted) {
-                  Navigator.pop(context, true);
-                }
               },
+              icon: const Icon(Icons.list_rounded),
+              label: const Text('Open Full Expense Ledger'),
             ),
+          ),
+          const SizedBox(height: 60),
         ],
       ),
     );
   }
 
-  Widget _buildMetricsGrid() {
-    final balanceStr = _walletSummary != null
-        ? _formatMoney(_walletSummary!.balancePaise)
-        : '—';
-    final totalContribStr = _walletSummary != null
-        ? _formatMoney(_walletSummary!.totalContributionsPaise)
-        : '—';
-    final totalExpenseStr = _walletSummary != null
-        ? _formatMoney(_walletSummary!.totalExpensesPaise)
-        : '—';
-    final memberStr = _memberCount != null ? '$_memberCount' : '—';
-    final expenseStr = _expenseCount != null ? '$_expenseCount' : '—';
-    final contributionStr =
-        _contributionCount != null ? '$_contributionCount' : '—';
-
-    return Column(
-      children: [
-        Card(
-          color: Theme.of(context).colorScheme.primaryContainer,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            child: Row(
+  // =========================================================
+  // TAB 3: SETTLEMENT
+  // =========================================================
+  Widget _buildSettlementTab(ThemeData theme, bool isClosed) {
+    return RefreshIndicator(
+      onRefresh: _loadDashboard,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: theme.colorScheme.outlineVariant.withOpacity(0.35)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  Icons.account_balance_wallet,
-                  size: 34,
-                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                Row(
+                  children: [
+                    Icon(Icons.balance_rounded, color: theme.colorScheme.primary),
+                    const SizedBox(width: 10),
+                    const Text('Trip Balance Summary', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  ],
                 ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Common Wallet Balance',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onPrimaryContainer
-                              .withValues(alpha: 0.8),
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        balanceStr,
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color:
-                              Theme.of(context).colorScheme.onPrimaryContainer,
-                        ),
-                      ),
-                    ],
-                  ),
+                const SizedBox(height: 12),
+                const Text(
+                  'When the trip concludes, debt simplification calculates the minimal transfers required so everyone settles their exact share.',
+                  style: TextStyle(fontSize: 13, height: 1.4),
+                ),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => SettlementScreen(trip: _trip)),
+                    );
+                  },
+                  icon: const Icon(Icons.calculate_rounded),
+                  label: const Text('Open Settlement Matrix'),
                 ),
               ],
             ),
           ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: _buildMetricCard(
-                'Total Inflow',
-                totalContribStr,
-                Icons.arrow_downward,
-                Colors.green,
+          const SizedBox(height: 20),
+          const Text('Member Summary', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 10),
+          ..._memberSummaries.map((summary) {
+            final isPositive = summary.netPaise >= 0;
+            return Card(
+              margin: const EdgeInsets.only(bottom: 8),
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: theme.colorScheme.outlineVariant.withOpacity(0.3)),
               ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _buildMetricCard(
-                'Total Outflow',
-                totalExpenseStr,
-                Icons.arrow_upward,
-                Colors.orange,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: _buildMetricCard(
-                'Members',
-                memberStr,
-                Icons.people,
-                Colors.blue,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _buildMetricCard(
-                'Expenses',
-                expenseStr,
-                Icons.receipt_long,
-                Colors.deepOrange,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _buildMetricCard(
-                'Contributions',
-                contributionStr,
-                Icons.payments,
-                Colors.purple,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMemberFinancialSnapshotSection() {
-    if (_memberSummaries.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Row(
-                  children: [
-                    Icon(Icons.account_balance_rounded, size: 20, color: Colors.teal),
-                    SizedBox(width: 8),
-                    Text(
-                      'Member Net Positions',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-                TextButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => MemberFinancialScreen(trip: _trip),
-                      ),
-                    ).then((_) => _loadDashboard());
-                  },
-                  child: const Text('View All'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            ..._memberSummaries.take(4).map((member) {
-              final net = member.netPaise;
-              final isPositive = net > 0;
-              final isNegative = net < 0;
-
-              final Color color = isPositive
-                  ? Colors.green.shade700
-                  : isNegative
-                      ? Colors.red.shade700
-                      : Colors.grey.shade700;
-              final String label = isPositive
-                  ? '+${_formatMoney(net)} (gets back)'
-                  : isNegative
-                      ? '-${_formatMoney(net.abs())} (owes)'
-                      : '${_formatMoney(0)} (settled)';
-
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        member.name,
-                        style: const TextStyle(fontWeight: FontWeight.w500),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    Text(
-                      label,
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                        color: color,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRecentExpensesSection() {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Recent Expenses',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                TextButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ExpenseHistoryScreen(trip: _trip),
-                      ),
-                    ).then((_) => _loadDashboard());
-                  },
-                  child: const Text('View All'),
-                ),
-              ],
-            ),
-            if (_recentExpenses.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  'No expenses recorded yet.',
-                  style: TextStyle(color: Colors.grey.shade600),
-                ),
-              )
-            else
-              ..._recentExpenses.map((expense) {
-                final payerName = _memberNames[expense.paidBy] ?? 'Member';
-                final catColor = getExpenseCategoryColor(expense.category);
-                return ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: CircleAvatar(
-                    backgroundColor: catColor.withValues(alpha: 0.15),
-                    child: Icon(
-                      getExpenseCategoryIcon(expense.category),
-                      color: catColor,
-                      size: 18,
-                    ),
+              child: ListTile(
+                title: Text(summary.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text('Spent: ${_formatMoney(summary.spentPaise)} • Contributed: ${_formatMoney(summary.contributedPaise)}'),
+                trailing: Text(
+                  _formatMoney(summary.netPaise),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isPositive ? const Color(0xFF10B981) : Colors.redAccent,
                   ),
-                  title: Text(
-                    expense.description?.isNotEmpty == true
-                        ? expense.description!
-                        : expense.category,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  subtitle: Text(
-                    'Paid by $payerName • ${_formatDate(expense.createdAt)}',
-                    style: const TextStyle(fontSize: 11),
-                  ),
-                  trailing: Text(
-                    _formatMoney(expense.amountPaise),
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ExpenseDetailsScreen(
-                          trip: _trip,
-                          expenseId: expense.id,
-                        ),
-                      ),
-                    ).then((_) => _loadDashboard());
-                  },
-                );
-              }),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildRecentContributionsSection() {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Recent Contributions',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                TextButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            ContributionHistoryScreen(trip: _trip),
-                      ),
-                    ).then((_) => _loadDashboard());
-                  },
-                  child: const Text('View All'),
-                ),
-              ],
-            ),
-            if (_recentContributions.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  'No contributions recorded yet.',
-                  style: TextStyle(color: Colors.grey.shade600),
-                ),
-              )
-            else
-              ..._recentContributions.map((contrib) {
-                final memberName = _memberNames[contrib.memberId] ?? 'Member';
-                return ListTile(
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  leading: CircleAvatar(
-                    child: Text(
-                      memberName.isNotEmpty
-                          ? memberName[0].toUpperCase()
-                          : '?',
-                      style: const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  title: Text(
-                    memberName,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  subtitle: Text(
-                    '${contrib.paymentMethod} • ${_formatDate(contrib.createdAt)}',
-                    style: const TextStyle(fontSize: 11),
-                  ),
-                  trailing: Text(
-                    _formatMoney(contrib.amountPaise),
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.green,
-                    ),
-                  ),
-                );
-              }),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMetricCard(
-    String label,
-    String value,
-    IconData icon,
-    Color color,
-  ) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-        child: Column(
-          children: [
-            Icon(icon, size: 20, color: color),
-            const SizedBox(height: 4),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text(
-                value,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13,
                 ),
               ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 10,
-                color: Colors.grey.shade600,
-              ),
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTripHeader() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 28,
-                  child: Text(
-                    _trip.name.isNotEmpty ? _trip.name[0].toUpperCase() : '?',
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _trip.name,
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      if (_trip.destination != null)
-                        Text(
-                          _trip.destination!,
-                          style: const TextStyle(fontSize: 15),
-                        ),
-                    ],
-                  ),
-                ),
-                Chip(
-                  label: Text(_trip.status),
-                  backgroundColor: _trip.status == 'CLOSED'
-                      ? Colors.grey.shade300
-                      : Colors.green.shade100,
-                ),
-              ],
-            ),
-            if (_trip.description != null && _trip.description!.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              Text(_trip.description!),
-            ],
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                const Icon(Icons.currency_exchange, size: 20),
-                const SizedBox(width: 8),
-                Text('Currency: ${_trip.currency}'),
-              ],
-            ),
-            if (_trip.startDate != null || _trip.endDate != null) ...[
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(Icons.calendar_month, size: 20),
-                  const SizedBox(width: 8),
-                  Text('${_trip.startDate ?? '—'} → ${_trip.endDate ?? '—'}'),
-                ],
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSection(
-    BuildContext context, {
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-  }) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-        leading: CircleAvatar(child: Icon(icon)),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text(subtitle),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: onTap,
+            );
+          }),
+        ],
       ),
     );
   }

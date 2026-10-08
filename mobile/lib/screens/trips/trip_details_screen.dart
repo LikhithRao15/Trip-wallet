@@ -346,7 +346,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
                 _buildSettlementTab(theme, isClosed),
               ],
             ),
-      floatingActionButton: isClosed
+      floatingActionButton: (isClosed || !_isAdmin)
           ? null
           : FloatingActionButton.extended(
               onPressed: () async {
@@ -514,10 +514,20 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
               _buildQuickActionButton(
                 theme: theme,
                 icon: Icons.receipt_long_rounded,
-                label: 'Pay Expense',
+                label: _isAdmin ? 'Pay Expense' : 'Expenses',
                 onTap: isClosed
                     ? null
                     : () async {
+                        if (!_isAdmin) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Only the Trip Admin can record and pay expenses from the common wallet.'),
+                              backgroundColor: Colors.indigo,
+                            ),
+                          );
+                          _tabController.animateTo(1);
+                          return;
+                        }
                         await Navigator.push(
                           context,
                           MaterialPageRoute(builder: (_) => PayExpenseScreen(trip: _trip)),
@@ -555,13 +565,13 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
 
           const SizedBox(height: 22),
 
-          // 3. Member Balances Glance
+          // 3. Member Contributions & Balances Glance
           if (_memberSummaries.isNotEmpty) ...[
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 const Text(
-                  'Member Balances',
+                  'Member Contributions & Balances',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 ),
                 TextButton(
@@ -577,7 +587,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
             ),
             const SizedBox(height: 8),
             SizedBox(
-              height: 100,
+              height: 115,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: _memberSummaries.length,
@@ -587,7 +597,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
                   final isPositive = summary.netPaise >= 0;
 
                   return Container(
-                    width: 140,
+                    width: 155,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
@@ -605,6 +615,20 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Text('Paid: ', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                            Text(
+                              _formatMoney(summary.contributedPaise),
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF10B981),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 3),
                         Text(
                           isPositive ? 'Surplus' : 'Owes',
                           style: TextStyle(
@@ -613,12 +637,11 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        const SizedBox(height: 2),
                         Text(
                           _formatMoney(summary.netPaise),
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            fontSize: 13,
+                            fontSize: 12,
                             color: isPositive ? const Color(0xFF10B981) : Colors.redAccent,
                           ),
                         ),

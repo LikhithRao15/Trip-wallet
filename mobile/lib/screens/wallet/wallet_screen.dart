@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../../models/member_financial_summary.dart';
 import '../../models/trip.dart';
 import '../../models/wallet_summary.dart';
 import '../../models/wallet_transaction.dart';
 import '../../services/auth_service.dart';
 import '../../services/contribution_service.dart';
+import '../../services/member_financial_service.dart';
 import '../../services/wallet_service.dart';
 import 'add_contribution_screen.dart';
 import 'contribution_history_screen.dart';
@@ -30,10 +32,12 @@ class WalletScreen extends StatefulWidget {
 class _WalletScreenState extends State<WalletScreen> {
   final WalletService _walletService = WalletService();
   final ContributionService _contributionService = ContributionService();
+  final MemberFinancialService _memberFinancialService = MemberFinancialService();
   final AuthService _authService = AuthService();
 
   WalletSummary? _summary;
   List<WalletTransaction> _transactions = [];
+  List<MemberFinancialSummary> _memberSummaries = [];
 
   bool _isLoading = true;
   String? _error;
@@ -156,11 +160,19 @@ class _WalletScreenState extends State<WalletScreen> {
         // Non-admin may get 403, which is normal
       }
 
+      List<MemberFinancialSummary> memberSummaries = [];
+      try {
+        memberSummaries = await _memberFinancialService.getSummary(widget.trip.id);
+      } catch (_) {
+        // Non-critical fallback
+      }
+
       if (!mounted) return;
 
       setState(() {
         _summary = summary;
         _transactions = transactions;
+        _memberSummaries = memberSummaries;
         _pendingContributionsCount = pendingCount;
         _isLoading = false;
       });
@@ -195,19 +207,6 @@ class _WalletScreenState extends State<WalletScreen> {
                   icon: const Icon(Icons.rate_review_outlined),
                   tooltip: 'Review Pending Contributions ($_pendingContributionsCount)',
                 ),
-              ),
-            // Primary Member Contribution Flow
-            IconButton(
-              onPressed: _isLoading ? null : _openMemberContribution,
-              icon: const Icon(Icons.add_card),
-              tooltip: 'Add Contribution',
-            ),
-            // Admin Direct Manual Entry
-            if (_isAdmin)
-              IconButton(
-                onPressed: _isLoading ? null : _openAddContribution,
-                icon: const Icon(Icons.post_add),
-                tooltip: 'Record Manual Contribution',
               ),
           ],
           IconButton(
@@ -244,11 +243,11 @@ class _WalletScreenState extends State<WalletScreen> {
             icon: const Icon(Icons.receipt_outlined),
             tooltip: 'Payment History',
           ),
-          if (widget.trip.status != 'CLOSED')
+          if (widget.trip.status != 'CLOSED' && _isAdmin)
             IconButton(
               onPressed: _isLoading ? null : _openPayExpense,
               icon: const Icon(Icons.payment),
-              tooltip: 'Pay Expense',
+              tooltip: 'Pay Expense (Admin Only)',
             ),
           IconButton(
             onPressed: _loadWallet,
@@ -376,6 +375,10 @@ class _WalletScreenState extends State<WalletScreen> {
             ],
           ),
 
+          const SizedBox(height: 18),
+
+          _buildMemberContributionsBreakdown(summary),
+
           const SizedBox(height: 24),
 
           const Text(
@@ -487,6 +490,158 @@ class _WalletScreenState extends State<WalletScreen> {
               value,
               textAlign: TextAlign.center,
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMemberContributionsBreakdown(WalletSummary summary) {
+    final totalPaise = summary.totalContributionsPaise;
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.pie_chart_rounded, size: 20, color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Member Contributions',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                Text(
+                  '${_memberSummaries.length} members',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (_memberSummaries.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Center(
+                  child: Text(
+                    'No member contributions recorded yet.',
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                  ),
+                ),
+              )
+            else
+              ..._memberSummaries.map((m) {
+                final pct = totalPaise > 0 ? (m.contributedPaise / totalPaise) : 0.0;
+                final isAdminMember = m.memberId == widget.trip.adminId;
+
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 14,
+                            backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
+                            child: Text(
+                              m.name.isNotEmpty ? m.name[0].toUpperCase() : '?',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    m.name,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if (isAdminMember) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: Colors.indigo.shade50,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: Colors.indigo.shade200, width: 0.5),
+                                    ),
+                                    child: Text(
+                                      'Admin',
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.indigo.shade800,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                _formatMoney(m.contributedPaise),
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: m.contributedPaise > 0 ? const Color(0xFF10B981) : Colors.grey.shade600,
+                                ),
+                              ),
+                              if (totalPaise > 0 && m.contributedPaise > 0)
+                                Text(
+                                  '${(pct * 100).toStringAsFixed(0)}% of pool',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.grey.shade500,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: pct.clamp(0.0, 1.0),
+                          minHeight: 4,
+                          backgroundColor: Colors.grey.shade100,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            m.contributedPaise > 0 ? Theme.of(context).colorScheme.primary : Colors.transparent,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
           ],
         ),
       ),

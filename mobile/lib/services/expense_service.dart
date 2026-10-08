@@ -22,6 +22,7 @@ class ExpenseService {
     required int amountPaise,
     required String category,
     String? description,
+    String? vendorUpiId,
     required List<String> memberIds,
     String splitMode = 'EQUAL',
     List<Map<String, dynamic>>? splits,
@@ -34,6 +35,7 @@ class ExpenseService {
       'amount_paise': amountPaise,
       'category': category,
       'description': description,
+      'vendor_upi_id': vendorUpiId?.trim().isNotEmpty == true ? vendorUpiId!.trim() : null,
       'member_ids': memberIds,
       'split_mode': splitMode,
     };

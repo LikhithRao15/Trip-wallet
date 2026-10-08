@@ -32,6 +32,7 @@ class ExpenseCreate(BaseModel):
     amount_paise: int = Field(gt=0)
     category: str = Field(min_length=1, max_length=50)
     description: str | None = None
+    vendor_upi_id: str | None = None
     split_mode: str = "EQUAL"
     member_ids: list[UUID] | None = None
     splits: list[SplitInput] | None = None

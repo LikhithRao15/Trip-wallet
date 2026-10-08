@@ -23,6 +23,7 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
 
   final _amountController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final _vendorUpiController = TextEditingController();
 
   final MemberService _memberService = MemberService();
   final ExpenseService _expenseService = ExpenseService();
@@ -37,6 +38,7 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
 
   bool _loadingMembers = true;
   bool _submitting = false;
+  bool _isDirectUpiPayout = false;
   String? _error;
 
   String _category = 'FOOD';
@@ -54,6 +56,7 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
   void dispose() {
     _amountController.dispose();
     _descriptionController.dispose();
+    _vendorUpiController.dispose();
     for (final c in _customAmountControllers.values) {
       c.dispose();
     }
@@ -382,6 +385,7 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
         description: _descriptionController.text.trim().isEmpty
             ? null
             : _descriptionController.text.trim(),
+        vendorUpiId: _isDirectUpiPayout ? _vendorUpiController.text.trim() : null,
         memberIds: _selectedMemberIds.toList(),
         splitMode: _splitMode,
         splits: splitsPayload,
@@ -503,7 +507,83 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
                 border: OutlineInputBorder(),
               ),
             ),
-            const SizedBox(height: 28),
+            const SizedBox(height: 20),
+
+            // RazorpayX Instant UPI Payout Option
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: _isDirectUpiPayout ? Colors.indigo.shade50 : Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: _isDirectUpiPayout ? Colors.indigo.shade300 : Colors.grey.shade300,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.bolt_rounded,
+                        color: _isDirectUpiPayout ? Colors.indigo : Colors.grey.shade700,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Direct UPI Payout to Vendor',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: _isDirectUpiPayout ? Colors.indigo.shade900 : Colors.black87,
+                              ),
+                            ),
+                            Text(
+                              'Transfer funds from pool directly to vendor UPI ID',
+                              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Switch(
+                        value: _isDirectUpiPayout,
+                        onChanged: (val) {
+                          setState(() {
+                            _isDirectUpiPayout = val;
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                  if (_isDirectUpiPayout) ...[
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _vendorUpiController,
+                      decoration: const InputDecoration(
+                        labelText: 'Vendor UPI ID (e.g. merchant@upi or 9876543210@paytm)',
+                        prefixIcon: Icon(Icons.qr_code_2_rounded),
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                        filled: true,
+                        fillColor: Colors.white,
+                      ),
+                      validator: (val) {
+                        if (_isDirectUpiPayout && (val == null || val.trim().isEmpty)) {
+                          return 'Enter vendor UPI ID';
+                        }
+                        if (_isDirectUpiPayout && !val!.contains('@')) {
+                          return 'Enter a valid UPI ID (must contain @)';
+                        }
+                        return null;
+                      },
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
 
             // Split Mode Selector
             const Text(

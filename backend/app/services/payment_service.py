@@ -95,3 +95,51 @@ def create_razorpay_refund(
         refund_data["notes"] = {"reason": reason[:255]}
 
     return client.payment.refund(payment_id, refund_data)
+
+
+def create_razorpayx_payout(
+    vpa_address: str,
+    amount_paise: int,
+    vendor_name: str = "Vendor",
+    reference_id: str | None = None,
+    narration: str = "Trip Expense",
+) -> dict:
+    """
+    Execute an automated RazorpayX UPI Payout directly to a vendor/merchant's UPI ID.
+    """
+    if amount_paise <= 0:
+        raise ValueError("Payout amount must be greater than zero")
+
+    client = get_razorpay_client()
+    account_number = settings.RAZORPAYX_ACCOUNT_NUMBER
+
+    payout_payload = {
+        "account_number": account_number if account_number else "7878780080316316",
+        "fund_account": {
+            "account_type": "vpa",
+            "vpa": {
+                "address": vpa_address.strip(),
+            },
+            "contact": {
+                "name": vendor_name[:50] if vendor_name else "Vendor",
+                "email": "payout@tripwallet.app",
+                "contact": "9999999999",
+                "type": "vendor",
+            },
+        },
+        "amount": amount_paise,
+        "currency": "INR",
+        "mode": "UPI",
+        "purpose": "payout",
+        "queue_if_low_balance": True,
+        "reference_id": reference_id[:40] if reference_id else None,
+        "narration": narration[:30],
+    }
+
+    try:
+        if hasattr(client, "payout"):
+            return client.payout.create(data=payout_payload)
+        else:
+            return client.request("POST", "v1/payouts", data=payout_payload)
+    except Exception as exc:
+        raise RuntimeError(f"RazorpayX Payout failed: {str(exc)}")

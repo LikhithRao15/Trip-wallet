@@ -9,6 +9,7 @@ import '../../services/wallet_service.dart';
 import 'add_contribution_screen.dart';
 import 'contribution_history_screen.dart';
 import 'member_contribution_flow_screen.dart';
+import 'online_payment_screen.dart';
 import 'payment_history_screen.dart';
 import 'pending_contributions_screen.dart';
 import 'wallet_transactions_screen.dart';
@@ -56,6 +57,21 @@ class _WalletScreenState extends State<WalletScreen> {
         });
       }
     } catch (_) {}
+  }
+
+  Future<void> _openOnlinePayment() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => OnlinePaymentScreen(
+          trip: widget.trip,
+        ),
+      ),
+    );
+
+    if (result == true && mounted) {
+      await _loadWallet();
+    }
   }
 
   Future<void> _openAddContribution() async {
@@ -424,12 +440,21 @@ class _WalletScreenState extends State<WalletScreen> {
             ),
             if (widget.trip.status != 'CLOSED') ...[
               const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: _openMemberContribution,
-                icon: const Icon(Icons.add_circle_outline),
-                label: const Text('Add Contribution'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              FilledButton.icon(
+                onPressed: _openOnlinePayment,
+                icon: const Icon(Icons.flash_on_rounded),
+                label: const Text('Add Money (Instant Online Payment)'),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: _isAdmin ? _openAddContribution : _openMemberContribution,
+                icon: const Icon(Icons.currency_rupee, size: 16),
+                label: Text(
+                  _isAdmin ? 'Record Offline Cash / Transfer' : 'Submit Manual Offline Transfer',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
                 ),
               ),
             ],

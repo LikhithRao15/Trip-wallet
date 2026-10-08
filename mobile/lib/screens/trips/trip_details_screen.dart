@@ -19,6 +19,7 @@ import '../expenses/pay_expense_screen.dart';
 import '../settlement/settlement_screen.dart';
 import '../wallet/add_contribution_screen.dart';
 import '../wallet/contribution_history_screen.dart';
+import '../wallet/online_payment_screen.dart';
 import '../wallet/wallet_screen.dart';
 import 'close_trip_screen.dart';
 import 'member_financial_screen.dart';
@@ -500,11 +501,13 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with SingleTicker
                 onTap: isClosed
                     ? null
                     : () async {
-                        await Navigator.push(
+                        final result = await Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (_) => WalletScreen(trip: _trip)),
+                          MaterialPageRoute(builder: (_) => OnlinePaymentScreen(trip: _trip)),
                         );
-                        _loadDashboard();
+                        if (result == true) {
+                          _loadDashboard();
+                        }
                       },
               ),
               const SizedBox(width: 10),

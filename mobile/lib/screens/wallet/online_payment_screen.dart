@@ -255,7 +255,7 @@ class _OnlinePaymentScreenState extends State<OnlinePaymentScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Secure Online Payment',
+                              'Instant & Secure Payment',
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 color: Theme.of(context).colorScheme.primary,
@@ -263,7 +263,7 @@ class _OnlinePaymentScreenState extends State<OnlinePaymentScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'Payments are securely processed via Razorpay Test Mode and verified server-side before wallet credit.',
+                              'Pay via UPI (GPay, PhonePe, Paytm), Cards, or NetBanking. Your Trip Wallet balance updates automatically upon successful payment.',
                               style: Theme.of(context).textTheme.bodySmall,
                             ),
                           ],
@@ -275,6 +275,31 @@ class _OnlinePaymentScreenState extends State<OnlinePaymentScreen> {
               ),
 
               const SizedBox(height: 24),
+
+              Text(
+                'Quick Select Amount',
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [500, 1000, 2000, 5000].map((val) {
+                  return ActionChip(
+                    label: Text('₹$val'),
+                    backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    onPressed: (_isProcessing || _isVerifying)
+                        ? null
+                        : () {
+                            setState(() {
+                              _amountController.text = val.toString();
+                            });
+                          },
+                  );
+                }).toList(),
+              ),
+
+              const SizedBox(height: 16),
 
               TextFormField(
                 controller: _amountController,

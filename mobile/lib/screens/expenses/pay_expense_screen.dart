@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/expense_categories.dart';
 import '../../core/network/network_info.dart';
@@ -373,6 +374,93 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
 
     if (!mounted) return;
 
+    // If Direct UPI Payout is enabled, launch GPay / PhonePe / Paytm on user's phone
+    if (_isDirectUpiPayout) {
+      final vpa = _vendorUpiController.text.trim();
+      final rupeesFormatted = (amountPaise / 100).toStringAsFixed(2);
+      final note = _descriptionController.text.trim().isNotEmpty
+          ? _descriptionController.text.trim()
+          : 'Trip Expense - ${widget.trip.name}';
+
+      final upiUri = Uri.parse(
+        'upi://pay?pa=$vpa&pn=Vendor&am=$rupeesFormatted&cu=INR&tn=${Uri.encodeComponent(note)}',
+      );
+
+      try {
+        final canLaunch = await canLaunchUrl(upiUri);
+        if (canLaunch) {
+          await launchUrl(upiUri, mode: LaunchMode.externalApplication);
+        } else {
+          // Attempt launch directly anyway for Android intent handler
+          await launchUrl(upiUri, mode: LaunchMode.externalApplication);
+        }
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not open UPI app: $e. Please pay manually and record.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+
+      if (!mounted) return;
+
+      // Ask user to verify they completed the payment in GPay/PhonePe
+      final didCompletePayment = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.payment_rounded, color: Colors.indigo),
+              SizedBox(width: 8),
+              Text('Confirm UPI Payment'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Did you complete the payment of ${widget.trip.currency} $rupeesFormatted to $vpa in your UPI app?',
+                style: const TextStyle(fontSize: 15),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.amber.shade200),
+                ),
+                child: const Text(
+                  'Only confirm if the payment succeeded in your UPI app. The amount will be deducted from your Trip Wallet pool.',
+                  style: TextStyle(fontSize: 12, color: Colors.black87),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel / Failed', style: TextStyle(color: Colors.red)),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Yes, Payment Succeeded'),
+            ),
+          ],
+        ),
+      );
+
+      if (didCompletePayment != true) {
+        return;
+      }
+    }
+
+    if (!mounted) return;
+
     setState(() {
       _submitting = true;
     });
@@ -394,7 +482,10 @@ class _PayExpenseScreenState extends State<PayExpenseScreen> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Expense paid successfully')),
+        const SnackBar(
+          content: Text('Expense recorded and deducted from trip wallet!'),
+          backgroundColor: Colors.green,
+        ),
       );
 
       Navigator.pop(context, true);
